@@ -1,6 +1,6 @@
 # Read node features and labels from ".content" file
 node_data = {}
-with open('cora.content', 'r') as f:
+with open('AnomalyDAE//cora//cora.content', 'r') as f:
     for line in f:
         parts = line.strip().split()
         node_id = parts[0]
@@ -10,12 +10,12 @@ with open('cora.content', 'r') as f:
 
 # Read edges from ".cites" file
 edges = []
-with open('cora.cites', 'r') as f:
+with open('AnomalyDAE//cora//cora.cites', 'r') as f:
     for line in f:
         source, target = line.strip().split()
         edges.append((source, target))
 
-# Now you can use the 'node_data' dictionary and 'edges' list to construct the graph
+# use the 'node_data' dictionary and 'edges' list to construct the graph
 # For example, using NetworkX:
 import networkx as nx
 
@@ -24,3 +24,5 @@ for node_id, data in node_data.items():
     graph.add_node(node_id, **data)
 
 graph.add_edges_from(edges)
+
+print(graph)
