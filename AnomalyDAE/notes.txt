@@ -1,0 +1,11 @@
+
+
+1) import CORA dataset
+
+AnomalyDAE is implemented in the pyGOD library - anomaly detection through a dual autoencoder (AnomalyDAE)
+https://docs.pygod.org/en/latest/generated/pygod.detector.AnomalyDAE.html#pygod.detector.AnomalyDAE
+
+Source: https://arxiv.org/abs/2002.03665
+"Anomaly detection on attributed networks aims at finding nodes whose patterns deviate significantly from the majority of reference nodes"
+it captures the complex interactions between network structure and node attribute for high-quality embeddings
+
