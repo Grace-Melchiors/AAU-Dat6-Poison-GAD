@@ -1,12 +1,7 @@
 import torch
 import random
-import operator
 import numpy as np
 from datetime import datetime
-
-
-#from torch import Tensor
-#from torch_geometric.typing import OptTensor, PairTensor
 
 from torch_geometric.utils.mask import index_to_mask
 from torch_geometric.utils.num_nodes import maybe_num_nodes
@@ -15,7 +10,7 @@ from torch_geometric.utils.num_nodes import maybe_num_nodes
 
 
 def get_subset_neighbors(subset, edge_index, unique_neighbors=False):
-    """ Subset LongTensor, BoolTensor or [int]: The nodes to get neighbors from.
+    """ Subset (LongTensor): The nodes to get neighbors from.
         edge_index (LongTensor): The edge indices.
         unique_neighbors (bool): makes it such that there are no repeat neighbors
         
@@ -24,17 +19,16 @@ def get_subset_neighbors(subset, edge_index, unique_neighbors=False):
         Current implementation only tested with longtensors, potential bool problems
         """
 
+    # Create mask to only select target edges
     if subset.dtype != torch.bool:
-        num_nodes = maybe_num_nodes(edge_index)
-        node_mask = index_to_mask(subset, size=num_nodes)
-    else:               #Consider removing
-        num_nodes = subset.size(0)
-        node_mask = subset
+        num_nodes = maybe_num_nodes(edge_index) # gets amount of nodes present in edges
+        node_mask = index_to_mask(subset, size=num_nodes) # creates node mask
 
 
-    edge_mask = node_mask[edge_index[0]] #only look for edges from the considered subset
 
-    edge_index = edge_index[:, edge_mask]
+    edge_mask = node_mask[edge_index[0]] #create edge mask to find nodes starting from origin
+
+    edge_index = edge_index[:, edge_mask] #apply mask
 
     neighbor_nodes = edge_index[1]  #get the edges we go to
 
@@ -64,7 +58,7 @@ def get_node_connectivity_RWR(node, edge_index, iterations = 100, restart_chance
 
     # Main loop
     for i in range(iterations):
-        # Get next node
+        # randomly pick next node
         neighbors = get_subset_neighbors(torch.tensor(currentNode), edge_index)
         neighborNumber = random.randint(0, neighbors.size()[0] - 1)
         nextNode = neighbors[neighborNumber].item()
@@ -96,7 +90,7 @@ def generate_RWR_subgraph(starting_node, edge_index, amount_of_nodes):
         """
     connectivity = get_node_connectivity_RWR(starting_node, edge_index)
 
-    # If fewer or equal nodes than [amount of nodes] to add
+    # If fewer or equal nodes than [amount of nodes] to add, then add all
     if (len(connectivity) <= amount_of_nodes):
         return list(connectivity.keys())
     
@@ -115,7 +109,6 @@ def generate_RWR_subgraph(starting_node, edge_index, amount_of_nodes):
 
 
 #Example code:
-
 edge_index = torch.tensor([[0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
                            [1, 0, 2, 1, 3, 2, 4, 3, 5, 4, 6, 5]])
 edge_attr = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
