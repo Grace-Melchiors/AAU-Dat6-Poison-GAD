@@ -17,3 +17,11 @@
 #   booktitle={Proceedings of the 30th ACM International Conference on Information \& Knowledge Management},
 #   year={2021}
 # }"
+
+
+
+Changes:
+
+Random walk with restart (RWR) moved from utilizing DGL library to https://github.com/jinhongjung/pyrwr
+    
+

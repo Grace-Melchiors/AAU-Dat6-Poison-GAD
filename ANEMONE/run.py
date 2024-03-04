@@ -6,47 +6,68 @@ import os
 import dgl
 import argparse
 
+from torch_geometric.datasets import Planetoid
+dataset = Planetoid(root='/Dataset/Cora', name='Cora')
+
+data = dataset[0]
+print(f'Dataset: {dataset}:')
+print('======================')
+print(f'Number of graphs: {len(dataset)}')
+print(f'Number of features: {dataset.num_features}')
+print(f'Number of classes: {dataset.num_classes}')
+
+print(f'Number of nodes: {data.num_nodes}')
+print(f'Number of edges: {data.num_edges}')
+print(f'Average node degree: {data.num_edges / data.num_nodes:.2f}')
+print(f'Number of training nodes: {data.train_mask.sum()}')
+print(f'Training node label rate: {int(data.train_mask.sum()) / data.num_nodes:.2f}')
+print(f'Contains isolated nodes: {data.contains_isolated_nodes()}')
+print(f'Contains self-loops: {data.contains_self_loops()}')
+print(f'Is undirected: {data.is_undirected()}')
+
+
+
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ['OMP_NUM_THREADS'] = '1'
 
-#Following what is recommended for CORA
-parser = argparse.ArgumentParser(description='ANEMONE')
-parser.add_argument('--expid', type=int, default=0.8)
-parser.add_argument('--device', type=str, default='cuda:0')
-parser.add_argument('--dataset', type=str, default='cora')
-parser.add_argument('--lr', type=float, default=1e-3)
-parser.add_argument('--weight_decay', type=float, default=0.0)
-parser.add_argument('--runs', type=int, default=1)
-parser.add_argument('--embedding_dim', type=int, default=64)
-parser.add_argument('--patience', type=int, default=100)
-parser.add_argument('--num_epoch', type=int, default=100)
-parser.add_argument('--batch_size', type=int, default=300)
-parser.add_argument('--subgraph_size', type=int, default=4)
-parser.add_argument('--readout', type=str, default='avg')
-parser.add_argument('--auc_test_rounds', type=int, default=256)
-parser.add_argument('--negsamp_ratio_patch', type=int, default=1)
-parser.add_argument('--negsamp_ratio_context', type=int, default=1)
-parser.add_argument('--alpha', type=float, default=1.0, help='how much context-level involves')
-args = parser.parse_args()
-
-#New:
+#Following what is recommended for CORA from https://github.com/GRAND-Lab/ANEMONE/blob/main/run.py
+EXPID = 0.8
+DATASET = 'cora'
+LR = 1e-3
+WEIGHT_DECAY = 0.0
+AMOUNT_RUNS = 1
+EMBEDDING_DIM = 64
+PATIENCE = 100
+NUM_EPOCH = 100
+BATCH_SIZE = 300
+SUBGRAPH_SIZE = 4
+READOUT = 'avg'
+AUC_TEST_ROUNDS = 256
+NEGSAMP_RATIO_PATCH = 1
+NEGSAMP_RATION_CONTEXT = 1
+ALPHA = 1
 
 
 
 if __name__ == '__main__':
 
-    print('Dataset: {}'.format(args.dataset), flush=True)
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    print('Dataset: {}'.format(DATASET), flush=True)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    seeds = [i + 1 for i in range(args.runs)]
+    seeds = [i + 1 for i in range(AMOUNT_RUNS)]
 
-    batch_size = args.batch_size
-    subgraph_size = args.subgraph_size
+    batch_size = BATCH_SIZE
+    subgraph_size = SUBGRAPH_SIZE
 
     adj, features, labels, idx_train, idx_val,\
-    idx_test, ano_label, str_ano_label, attr_ano_label = load_mat(args.dataset)
+    idx_test, ano_label, str_ano_label, attr_ano_label = load_mat(DATASET)
+
+
+    
+
 
     features, _ = preprocess_features(features)
     dgl_graph = adj_to_dgl_graph(adj)
@@ -66,7 +87,7 @@ if __name__ == '__main__':
     idx_test = torch.LongTensor(idx_test).to(device)
 
     all_auc = []
-    for run in range(args.runs):
+    for run in range(AMOUNT_RUNS):
         seed = seeds[run]
         print('\n# Run:{} with random seed:{}'.format(run, seed), flush=True)
         dgl.random.seed(seed)
@@ -77,20 +98,20 @@ if __name__ == '__main__':
         random.seed(seed)
         os.environ['PYTHONHASHSEED'] = str(seed)
 
-        model = Model(ft_size, args.embedding_dim, 'prelu', args.negsamp_ratio_patch, args.negsamp_ratio_context,
-                      args.readout).to(device)
-        optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        model = Model(ft_size, EMBEDDING_DIM, 'prelu', NEGSAMP_RATIO_PATCH, NEGSAMP_RATION_CONTEXT,
+                      READOUT).to(device)
+        optimiser = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0)
         b_xent_patch = nn.BCEWithLogitsLoss(reduction='none',
-                                            pos_weight=torch.tensor([args.negsamp_ratio_patch]).to(device))
+                                            pos_weight=torch.tensor([NEGSAMP_RATIO_PATCH]).to(device))
         b_xent_context = nn.BCEWithLogitsLoss(reduction='none',
-                                            pos_weight=torch.tensor([args.negsamp_ratio_context]).to(device))
+                                            pos_weight=torch.tensor([NEGSAMP_RATION_CONTEXT]).to(device))
 
         cnt_wait = 0
         best = 1e9
         best_t = 0
         batch_num = nb_nodes // batch_size + 1
 
-        for epoch in range(args.num_epoch):
+        for epoch in range(NUM_EPOCH):
 
             model.train()
 
@@ -113,10 +134,10 @@ if __name__ == '__main__':
                 cur_batch_size = len(idx)
 
                 lbl_patch = torch.unsqueeze(torch.cat(
-                    (torch.ones(cur_batch_size), torch.zeros(cur_batch_size * args.negsamp_ratio_patch))), 1).to(device)
+                    (torch.ones(cur_batch_size), torch.zeros(cur_batch_size * NEGSAMP_RATIO_PATCH))), 1).to(device)
 
                 lbl_context = torch.unsqueeze(torch.cat(
-                    (torch.ones(cur_batch_size), torch.zeros(cur_batch_size * args.negsamp_ratio_context))), 1).to(device)
+                    (torch.ones(cur_batch_size), torch.zeros(cur_batch_size * NEGSAMP_RATION_CONTEXT))), 1).to(device)
 
                 ba = []
                 bf = []
@@ -147,7 +168,7 @@ if __name__ == '__main__':
                 loss_all_2 = b_xent_patch(logits_2, lbl_patch)
                 loss_2 = torch.mean(loss_all_2)
 
-                loss = args.alpha * loss_1 + (1 - args.alpha) * loss_2
+                loss = ALPHA * loss_1 + (1 - ALPHA) * loss_2
 
                 loss.backward()
                 optimiser.step()
@@ -162,11 +183,11 @@ if __name__ == '__main__':
                 best = mean_loss
                 best_t = epoch
                 cnt_wait = 0
-                torch.save(model.state_dict(), 'checkpoints/exp_{}.pkl'.format(args.expid))
+                torch.save(model.state_dict(), 'checkpoints/exp_{}.pkl'.format(EXPID))
             else:
                 cnt_wait += 1
 
-            if cnt_wait == args.patience:
+            if cnt_wait == PATIENCE:
                 print('Early stopping!', flush=True)
                 break
 
@@ -174,11 +195,11 @@ if __name__ == '__main__':
 
         # Testing
         print('Loading {}th epoch'.format(best_t), flush=True)
-        model.load_state_dict(torch.load('checkpoints/exp_{}.pkl'.format(args.expid)))
-        multi_round_ano_score = np.zeros((args.auc_test_rounds, nb_nodes))
+        model.load_state_dict(torch.load('checkpoints/exp_{}.pkl'.format(EXPID)))
+        multi_round_ano_score = np.zeros((AUC_TEST_ROUNDS, nb_nodes))
         print('Testing AUC!', flush=True)
 
-        for round in range(args.auc_test_rounds):
+        for round in range(AUC_TEST_ROUNDS):
             all_idx = list(range(nb_nodes))
             random.shuffle(all_idx)
             subgraphs = generate_rwr_subgraph(dgl_graph, subgraph_size)
@@ -213,28 +234,28 @@ if __name__ == '__main__':
                     test_logits_1 = torch.sigmoid(torch.squeeze(test_logits_1))
                     test_logits_2 = torch.sigmoid(torch.squeeze(test_logits_2))
 
-                if args.alpha != 1.0 and args.alpha != 0.0:
-                    if args.negsamp_ratio_context == 1 and args.negsamp_ratio_patch == 1:
+                if ALPHA != 1.0 and ALPHA != 0.0:
+                    if NEGSAMP_RATION_CONTEXT == 1 and NEGSAMP_RATIO_PATCH == 1:
                         ano_score_1 = - (test_logits_1[:cur_batch_size] - test_logits_1[cur_batch_size:]).cpu().numpy()
                         ano_score_2 = - (test_logits_2[:cur_batch_size] - test_logits_2[cur_batch_size:]).cpu().numpy()
                     else:
                         ano_score_1 = - (test_logits_1[:cur_batch_size] - torch.mean(test_logits_1[cur_batch_size:].view(
-                            cur_batch_size, args.negsamp_ratio_context), dim=1)).cpu().numpy()  # context
+                            cur_batch_size, NEGSAMP_RATION_CONTEXT), dim=1)).cpu().numpy()  # context
                         ano_score_2 = - (test_logits_2[:cur_batch_size] - torch.mean(test_logits_2[cur_batch_size:].view(
-                            cur_batch_size, args.negsamp_ratio_patch), dim=1)).cpu().numpy()  # patch
-                    ano_score = args.alpha * ano_score_1 + (1 - args.alpha) * ano_score_2
-                elif args.alpha == 1.0:
-                    if args.negsamp_ratio_context == 1:
+                            cur_batch_size, NEGSAMP_RATIO_PATCH), dim=1)).cpu().numpy()  # patch
+                    ano_score = ALPHA * ano_score_1 + (1 - ALPHA) * ano_score_2
+                elif ALPHA == 1.0:
+                    if NEGSAMP_RATION_CONTEXT == 1:
                         ano_score = - (test_logits_1[:cur_batch_size] - test_logits_1[cur_batch_size:]).cpu().numpy()
                     else:
                         ano_score = - (test_logits_1[:cur_batch_size] - torch.mean(test_logits_1[cur_batch_size:].view(
-                                cur_batch_size, args.negsamp_ratio_context), dim=1)).cpu().numpy()  # context
-                elif args.alpha == 0.0:
-                    if args.negsamp_ratio_patch == 1:
+                                cur_batch_size, NEGSAMP_RATION_CONTEXT), dim=1)).cpu().numpy()  # context
+                elif ALPHA == 0.0:
+                    if NEGSAMP_RATIO_PATCH == 1:
                         ano_score = - (test_logits_2[:cur_batch_size] - test_logits_2[cur_batch_size:]).cpu().numpy()
                     else:
                         ano_score = - (test_logits_2[:cur_batch_size] - torch.mean(test_logits_2[cur_batch_size:].view(
-                                cur_batch_size, args.negsamp_ratio_patch), dim=1)).cpu().numpy()  # patch
+                                cur_batch_size, NEGSAMP_RATIO_PATCH), dim=1)).cpu().numpy()  # patch
 
                 multi_round_ano_score[round, idx] = ano_score
 
