@@ -1,2 +1,5 @@
 AAU-Dat6-Poison-GAD.code-workspace/
-.venv/
+*.venv
+Review/
+
+
