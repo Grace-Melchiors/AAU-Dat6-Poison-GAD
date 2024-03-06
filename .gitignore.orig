@@ -1,0 +1,10 @@
+AAU-Dat6-Poison-GAD.code-workspace/
+<<<<<<< HEAD
+data/
+Datasets/
+=======
+*.venv
+Review/
+
+
+>>>>>>> 9d985624ba3b67679512d677a3199beeb74279c9
