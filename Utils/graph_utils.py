@@ -4,6 +4,7 @@ from typing import Union
 import numpy as np
 import torch_sparse
 from torch_geometric.data.dataset import Dataset, BaseData
+import scipy.sparse as sp
 
 def adj_matrix_sparse_coo_to_dense(sparse_tensor: SparseTensor):
     # Unsqueeze to treat each tensor as a separate matrix, such that each matrix is stacked along the first dimension

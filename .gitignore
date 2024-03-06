@@ -3,5 +3,6 @@ data/
 Datasets/
 *.venv
 Review/
+*.pyc
 
 

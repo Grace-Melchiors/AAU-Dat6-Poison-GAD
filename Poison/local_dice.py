@@ -1,9 +1,11 @@
 import torch
 from torch_sparse import SparseTensor
-from base_classes import LocalPoison
+from Poison.base_classes import LocalPoison
 class LocalDICE(LocalPoison):
     def __init__(self, add_ratio: float = 1.0, **kwargs):
         self.add_ratio = add_ratio
+        self.adj_adversary = None
+
         super().__init__(**kwargs)
 
     def _poison(self, n_perturbations: int, node_idx: int, **kwargs):
