@@ -1,1 +1,8 @@
 AAU-Dat6-Poison-GAD.code-workspace/
+data/
+Datasets/
+*.venv
+Review/
+*.pyc
+
+
