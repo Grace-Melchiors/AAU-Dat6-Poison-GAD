@@ -26,11 +26,11 @@ def get_subset_neighbors(subset, edge_index, unique_neighbors=False):
 
 
 
-    edge_mask = node_mask[edge_index[0]] #create edge mask to find nodes starting from origin
+    edge_mask = node_mask[edge_index[0]] # create edge mask to find nodes starting from origin
 
-    edge_index = edge_index[:, edge_mask] #apply mask
+    edge_index = edge_index[:, edge_mask] # apply mask
 
-    neighbor_nodes = edge_index[1]  #get the edges we go to
+    neighbor_nodes = edge_index[1]  # get the edge destinations 
 
     if unique_neighbors:
         neighbor_nodes = torch.unique(neighbor_nodes)
@@ -54,7 +54,8 @@ def get_node_connectivity_RWR(node, edge_index, iterations = 100, restart_chance
         random.seed(random_seed)
 
     connectivity = dict([])  
-    currentNode = node
+    originNode = node   #Keep track of the origin
+    currentNode = node  #keep track of current
 
     # Main loop
     for i in range(iterations):
@@ -63,8 +64,8 @@ def get_node_connectivity_RWR(node, edge_index, iterations = 100, restart_chance
         neighborNumber = random.randint(0, neighbors.size()[0] - 1)
         nextNode = neighbors[neighborNumber].item()
 
-        # Count the visit
-        if nextNode != node:
+        # Count the visit, unless it's origin
+        if nextNode != originNode:
             if nextNode in connectivity:  #If seen before
                 connectivity[nextNode] += 1
             else:                         # if new
@@ -72,7 +73,7 @@ def get_node_connectivity_RWR(node, edge_index, iterations = 100, restart_chance
         
         # restart chance
         if random.uniform(0, 1) <= restart_chance:
-            currentNode = node
+            currentNode = originNode
         else:
             currentNode = nextNode
     
