@@ -5,6 +5,7 @@ class LocalDICE(LocalPoison):
     def __init__(self, add_ratio: float = 1.0, **kwargs):
         self.add_ratio = add_ratio
         self.adj_adversary = None
+        self.is_anomaly_matrix = None
 
         super().__init__(**kwargs)
 
