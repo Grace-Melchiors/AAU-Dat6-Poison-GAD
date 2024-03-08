@@ -36,3 +36,7 @@ class LocalPoison(Poison, ABC):
         self.edge_weight = edge_weight.to("cpu")
         self.n = adj.size(0)
         self.d = self.attr.shape[1]
+
+        @abstractmethod
+        def _poison(self, n_perturbations: int, node_idx: int, **kwargs):
+            pass
