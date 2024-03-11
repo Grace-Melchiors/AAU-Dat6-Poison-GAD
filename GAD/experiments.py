@@ -24,7 +24,7 @@ def run_local_dice() -> Tuple[Experiment, Experiment, List[int], Any]:
     sys.path.append('..')
     #data = Planetoid("./data/Cora", "Cora", transform=T.NormalizeFeatures())[0]
     data = load_data("inj_cora")
-    y_binary = data.y.bool()
+    y_binary: List[int] = data.y.bool()
     print(y_binary)
 
     detector = DOMINANT(hid_dim=64, num_layers=4, epoch=100)
