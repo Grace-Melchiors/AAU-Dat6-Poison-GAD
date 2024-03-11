@@ -6,6 +6,10 @@ import torch_sparse
 from torch_geometric.data.dataset import Dataset, BaseData
 import scipy.sparse as sp
 
+# For drawing graph, maybe move to seperate file for display/graph utils
+import networkx as nx
+import matplotlib.pyplot as plt
+
 def adj_matrix_sparse_coo_to_dense(sparse_tensor: SparseTensor):
     # Unsqueeze to treat each tensor as a separate matrix, such that each matrix is stacked along the first dimension
     col = sparse_tensor.storage.col().unsqueeze(0)
@@ -48,3 +52,15 @@ def prepare_graph(dataset: Union[Dataset, BaseData]):
     return node_attr, adj, labels
     
 
+
+
+
+def draw_dataset_graph(graph, graph_name=None):
+    # Draws the graph ----
+    plt.figure(figsize=(8, 8))
+    nx.draw(graph, node_size=10, node_color='b', edge_color='gray', with_labels=False)
+    if (graph_name is None) : 
+        plt.title('Dataset Graph')
+    else :
+        plt.title('CORA Dataset Graph')
+    plt.show()
