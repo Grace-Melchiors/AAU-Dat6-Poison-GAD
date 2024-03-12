@@ -8,10 +8,9 @@ import torch
 class Poison(ABC):
     def __init__(
         self,
-        adj: Union[SparseTensor, TensorType["n_nodes", "n_nodes"]],
+        adj: Union[SparseTensor, TensorType["n_nodes", "n_nodes"], sp.csr_matrix],
         attr: TensorType["n_nodes", "n_features"],
         labels: TensorType["n_nodes"],
-        **kwargs
     ):
         self.adj = adj
         self.attr = attr
@@ -22,12 +21,13 @@ class LocalPoison(Poison, ABC):
     def __init__(
         self,
         adj: Union[SparseTensor, TensorType["n_nodes", "n_nodes"], sp.csr_matrix],
+        attr: TensorType["n_nodes", "n_features"],
+        labels: TensorType["n_nodes"],
         target_node_id,
-        **kwargs
     ):
         self.target_node_id = target_node_id
 
-        super().__init__(adj, **kwargs)
+        super().__init__(adj, attr, labels)
 
         edge_index_rows, edge_index_cols, edge_weight = adj.coo()
         self.edge_index = torch.stack([edge_index_rows, edge_index_cols], dim=0).to(
@@ -38,5 +38,5 @@ class LocalPoison(Poison, ABC):
         self.d = self.attr.shape[1]
 
         @abstractmethod
-        def _poison(self, n_perturbations: int, node_idx: int, **kwargs):
+        def poison(self, n_perturbations: int, node_idx: int, **kwargs):
             pass

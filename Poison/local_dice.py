@@ -1,31 +1,35 @@
 import torch
+import torch_sparse
 from torch_sparse import SparseTensor
 from Poison.base_classes import LocalPoison
 
 
 ## Ported from https://github.com/sigeisler/robustness_of_gnns_at_scale/blob/main/rgnn_at_scale/attacks/local_dice.py
 class LocalDICE(LocalPoison):
-    def __init__(self, add_ratio: float = 1.0, **kwargs):
+    def __init__(self, adj: SparseTensor, add_ratio: float = 1.0, **kwargs):
         self.add_ratio = add_ratio
         self.adj_adversary = None
+        self.adj = adj
+        
 
-        super().__init__(**kwargs)
-
-    def _poison(self, n_perturbations: int, node_idx: int, **kwargs):
+        super().__init__(adj=adj, **kwargs)
 
 
-        # we first remove the edges that connect to the nodes of the same class of the targeted node
-        # afterwards, we add edges that connect to nodes of a different class 
-        # note that we sample the edges randomly
 
+    # we first remove the edges that connect to the nodes of the same class of the targeted node
+    # afterwards, we add edges that connect to nodes of a different class 
+    # note that we sample the edges randomly
+    def poison(self, n_perturbations: int, node_idx: int, **kwargs):
 
         add_budget = int(round((n_perturbations * self.add_ratio), 0)) #
-
-
         delete_budget = int(n_perturbations - add_budget)
 
-        # step 1: we get the indices of all edges connected to target node
-        adj_i = self.adj[node_idx]
+        # step 1: get the indices of all edges connected to target node
+        try:
+            adj_i: SparseTensor = self.adj[node_idx]
+        except Exception as e:
+            raise ValueError("Cannot subscript SparseTensor with index: " + str(node_idx))
+
         _, neighbors_idx, _ = adj_i.coo()
 
         # step 2: get the ones which connect to nodes of the same classes
