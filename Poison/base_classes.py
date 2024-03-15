@@ -11,10 +11,18 @@ class Poison(ABC):
         adj: Union[SparseTensor, TensorType["n_nodes", "n_nodes"], sp.csr_matrix],
         attr: TensorType["n_nodes", "n_features"],
         labels: TensorType["n_nodes"],
+        nnodes: Optional[int] = None,
+        attack_structure: bool = True,
+        attack_features: bool = False
+
     ):
         self.adj = adj
         self.attr = attr
         self.labels = labels
+        self.nnodes = nnodes
+        self.attack_structure = attack_structure
+        self.attack_features = attack_features
+
 
 
 class LocalPoison(Poison, ABC):
