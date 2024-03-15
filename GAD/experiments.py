@@ -48,9 +48,6 @@ def run_local_dice() -> Tuple[Experiment, Experiment, List[int], Any]:
     ld, node_idxs = poison_n_nodes(ld, 3, 1)
     print("These are the node_idxs: ${}".format(node_idxs))
 
-
-
-
     # Convert adversary adjecency matrix into compatible dense tensor
     adj_adversary = adj_matrix_sparse_coo_to_dense(ld.adj_adversary)
 
@@ -67,13 +64,11 @@ def run_local_dice() -> Tuple[Experiment, Experiment, List[int], Any]:
                                            return_conf=True)
     experiment_after_poison = Experiment(data=data_after_poison, pred=pred_after, score=score_after, prob=prob_after, conf=conf_after)
     
-    
     print("auc before poison:")
     print(roc_auc_score(y_binary, score))
     print("auc after poison:")
     print(roc_auc_score(y_binary, score_after))
     #print(roc_auc_score(data_inj.y.detach().numpy(), score_inj.detach.numpy()))
-
     
     return experiment_before_poison, experiment_after_poison, node_idxs, y_binary
 

@@ -4,11 +4,14 @@ from torchtyping import TensorType, patch_typeguard
 from torch_sparse import SparseTensor
 import scipy.sparse as sp
 import torch
+import copy
+from models import MODEL_TYPE
 
 class Poison(ABC):
     def __init__(
         self,
-        adj: Union[SparseTensor, TensorType["n_nodes", "n_nodes"], sp.csr_matrix],
+        adj: SparseTensor,
+        #Union[SparseTensor, TensorType["n_nodes", "n_nodes"], sp.csr_matrix],
         attr: TensorType["n_nodes", "n_features"],
         labels: TensorType["n_nodes"],
         nnodes: Optional[int] = None,
@@ -28,15 +31,17 @@ class Poison(ABC):
 class LocalPoison(Poison, ABC):
     def __init__(
         self,
-        adj: Union[SparseTensor, TensorType["n_nodes", "n_nodes"], sp.csr_matrix],
+        adj: SparseTensor,
+        #Union[SparseTensor, TensorType["n_nodes", "n_nodes"], sp.csr_matrix],
         attr: TensorType["n_nodes", "n_features"],
         labels: TensorType["n_nodes"],
         target_node_id,
+        attacked_model: Optional[MODEL_TYPE] = None
     ):
-        self.target_node_id = target_node_id
 
         super().__init__(adj, attr, labels)
 
+        self.target_node_id = target_node_id
         edge_index_rows, edge_index_cols, edge_weight = adj.coo()
         self.edge_index = torch.stack([edge_index_rows, edge_index_cols], dim=0).to(
             "cpu"
@@ -44,6 +49,17 @@ class LocalPoison(Poison, ABC):
         self.edge_weight = edge_weight.to("cpu")
         self.n = adj.size(0)
         self.d = self.attr.shape[1]
+        if attacked_model is None:
+            self.attacked_model = copy.deepcopy("cpu").to(self.device)
+        else:
+            # The case where we have a modified surrogate model. I.e. DOMINANT w/ 2 layers
+            self.attacked_model = attacked_model
+        
+        self.attacked_model.eval()
+        for p in self.attacked_model.parameters():
+            p.requires_grad = False
+        self.eval_model = self.attacked_model
+
 
         @abstractmethod
         def poison(self, n_perturbations: int, node_idx: int, **kwargs):

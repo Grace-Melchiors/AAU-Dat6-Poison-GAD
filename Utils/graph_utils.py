@@ -40,6 +40,35 @@ def adj_matrix_sparse_coo_to_dense(sparse_tensor: SparseTensor):
 
     return concatenated_tensor
 
+def convert_scipy_sparse_matrix_to_sparse_tensor(spmat: sp.spmatrix, grad: bool = False):
+    """
+
+    Convert a scipy.sparse matrix to a SparseTensor.
+    Parameters
+    ----------
+    spmat: sp.spmatrix
+        The input (sparse) matrix.
+    grad: bool
+        Whether the resulting tensor should have "requires_grad".
+    Returns
+    -------
+    sparse_tensor: SparseTensor
+        The output sparse tensor.
+    """
+    if str(spmat.dtype) == "float32":
+        dtype = torch.float32
+    elif str(spmat.dtype) == "float64":
+        dtype = torch.float64
+    elif str(spmat.dtype) == "int32":
+        dtype = torch.int32
+    elif str(spmat.dtype) == "int64":
+        dtype = torch.int64
+    elif str(spmat.dtype) == "bool":
+        dtype = torch.uint8
+    else:
+        dtype = torch.float32
+    return SparseTensor.from_scipy(spmat).to(dtype).coalesce()
+
 def prepare_graph(dataset: Union[Dataset, BaseData]):
     edge_index = dataset.edge_index.cpu()
 
