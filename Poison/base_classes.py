@@ -6,6 +6,9 @@ import scipy.sparse as sp
 import torch
 import copy
 from models import MODEL_TYPE
+from pygod.detector import DOMINANT
+from pygod.utils import load_data
+from torch.utils.data import Dataset
 
 class Poison(ABC):
     def __init__(
@@ -36,7 +39,8 @@ class LocalPoison(Poison, ABC):
         attr: TensorType["n_nodes", "n_features"],
         labels: TensorType["n_nodes"],
         target_node_id,
-        attacked_model: Optional[MODEL_TYPE] = None
+        attacked_model: Optional[MODEL_TYPE] = None,
+        data: Optional[Dataset] = None
     ):
 
         super().__init__(adj, attr, labels)
@@ -54,11 +58,17 @@ class LocalPoison(Poison, ABC):
         else:
             # The case where we have a modified surrogate model. I.e. DOMINANT w/ 2 layers
             self.attacked_model = attacked_model
+
+        if data is not None:
+            self.data = data
         
         self.attacked_model.eval()
         for p in self.attacked_model.parameters():
             p.requires_grad = False
         self.eval_model = self.attacked_model
+
+        if DOMINANT in MODEL_TYPE:
+            self.attacked_model.decision_function(data)
 
 
         @abstractmethod
