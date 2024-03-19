@@ -62,12 +62,12 @@ class LocalPoison(Poison, ABC):
         if data is not None:
             self.data = data
         
-        self.attacked_model.eval()
-        for p in self.attacked_model.parameters():
-            p.requires_grad = False
+        #self.attacked_model.eval()
+        #for p in self.attacked_model.parameters():
+        #    p.requires_grad = False
         self.eval_model = self.attacked_model
 
-        if DOMINANT in MODEL_TYPE:
+        if type(attacked_model) is DOMINANT:
             self.attacked_model.decision_function(data)
 
 

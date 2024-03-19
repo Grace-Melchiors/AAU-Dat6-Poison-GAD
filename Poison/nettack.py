@@ -55,21 +55,32 @@ class Nettack(LocalPoison):
 
         #assert self.make_undirected, 'Attack only implemented for undirected graphs'
 
-        assert len(self.attacked_model.layers) == 2, "Nettack supports only 2 Layer Linear GCN as surrogate model"
-        assert isinstance(self.attacked_model._modules['activation'], Identity), \
-            "Nettack only supports Linear GCN as surrogate model"
+        #assert len(self.attacked_model.layers) == 2, "Nettack supports only 2 Layer Linear GCN as surrogate model"
+        #assert len(self.attacked_model.num_layers) == 2, "Nettack supports only 2 Layer Linear GCN as surrogate model"
+        #assert len(self.attacked_model.layers) == 2, "Nettack supports only 2 Layer Linear GCN as surrogate model"
+        #assert isinstance(self.attacked_model._modules['activation'], Identity), \
+        #    "Nettack only supports Linear GCN as surrogate model"
 
         self.sp_adj = self.adj.to_scipy(layout="csr")
         self.sp_attr = SparseTensor.from_dense(self.attr).to_scipy(layout="csr")
         self.nettack = None
 
     def _attack(self, n_perturbations: int, node_idx: int, **kwargs):
+        self.attacked_model.eval()
+        backbone = self.attacked_model.model
+        shared_encoder = backbone.shared_encoder
+        encoder_layers = shared_encoder.convs
+
+        first_layer_weights = encoder_layers[0].lin.weight.detach().cpu().numpy()
+
+        # Access the weights of the second layer and convert to NumPy array
+        second_layer_weights = encoder_layers[1].lin.weight.detach().cpu().numpy()
 
         self.nettack = OriginalNettack(self.sp_adj,
                                        self.sp_attr,
                                        self.labels.detach().cpu().numpy(),
-                                       self.attacked_model.layers[0][0].weight.detach().cpu().numpy(),
-                                       self.attacked_model.layers[1][0].weight.detach().cpu().numpy(),
+                                       first_layer_weights,
+                                       second_layer_weights,
                                        node_idx,
                                        verbose=True)
         self.nettack.reset()
