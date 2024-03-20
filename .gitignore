@@ -5,6 +5,9 @@ Datasets/
 Review/
 *.pyc
 __pycache__/
+*.pt
+*.txt
+idea/
 
 
 
