@@ -37,10 +37,13 @@ class MLPDecoder(nn.Module):
         return self.decoder(x)
 
 class AutoEncoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, latent_dim, decoder_hidden_dims, output_dim):
+    def __init__(self, input_dim, hidden_dim, latent_dim, decoder_hidden_dims, output_dim, nfeat, nclass, nhid):
         super(AutoEncoder, self).__init__()
         self.encoder = GCNEncoder(input_dim, hidden_dim, latent_dim)
         self.decoder = MLPDecoder(latent_dim, decoder_hidden_dims, output_dim)
+        self.nfeat = nfeat
+        self.hidden_sizes = [nhid]
+        self.nclass = nclass
 
     def forward(self, x, edge_index):
         z = self.encoder(x, edge_index)
