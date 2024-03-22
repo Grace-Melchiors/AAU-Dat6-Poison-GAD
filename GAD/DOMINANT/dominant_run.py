@@ -91,6 +91,7 @@ def train_dominant(args):
         model.train()
         optimizer.zero_grad()
         A_hat, X_hat = model(attrs, adj)
+        print(f'Shape AHAT {A_hat.shape}, shape XHAT {X_hat.shape}')
         loss, struct_loss, feat_loss = loss_func(adj_label, A_hat, attrs, X_hat, args.alpha)
         l = torch.mean(loss)
         l.backward()
