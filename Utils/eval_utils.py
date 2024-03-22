@@ -24,7 +24,16 @@ def draw_compare_clean_and_poison(clean_prob, poison_prob, label):
         draws a graph comparing probabilities, highlighting true anomalies as red
         """
     
-    plt.scatter(clean_prob, poison_prob, marker='o', color='black', label='Best')
+    # assign colors based on probability of being an outlier
+    node_colors = []
+
+    for i in range(label.numel()):
+        if label[i].item() == 1: 
+            node_colors.append('red')
+        else:
+            node_colors.append('blue')
+
+    plt.scatter(clean_prob, poison_prob, marker='o', color=node_colors, label='Best')
     # axis labels   
     plt.xlabel('Clean Model', fontsize=26)
     plt.ylabel('Poisoned Model', fontsize=26)

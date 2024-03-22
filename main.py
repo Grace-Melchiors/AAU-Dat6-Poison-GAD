@@ -30,39 +30,57 @@ import torch_geometric.transforms as T
 #Controls, select dataset, anomaly injection, poison, run methods, and display options
 
 DATASET_NAME = 'Cora'  #Options: 'Cora', 
+POISON_TYPE = 'Greedy'  #Options: 'Greedy', 'localDice'
+TARGET_NODES = 'all'  #Options: 'all', 'first', 'middle', 'last'
+BUDGET = 35
 
 
-if __name__ == '__main__':
+
 ### LoadDataset ###
-    # the [0] at the end is used to access the attributes
-    data = Planetoid('./data/'+DATASET_NAME, DATASET_NAME, transform=T.NormalizeFeatures())[0]
-    dataset_name = 'Cora'
+from typing import Tuple, List, Any
+from pygod.utils import load_data
 
-    # Load the dataset
-    dataset = Planetoid(root='./data', name=DATASET_NAME)
 
-    # Access the dataset attributes
-    data = dataset[0]
 
-    # Convert PyTorch Geometric data to NetworkX graph ---
-    base_graph_dataset = pyg_utils.to_networkx(data, to_undirected=True)
+# the [0] at the end is used to access the attributes
+data = Planetoid('./data/'+DATASET_NAME, DATASET_NAME, transform=T.NormalizeFeatures())[0]
+dataset_name = 'Cora'
+
+# Load the dataset
+dataset = Planetoid(root='./data', name=DATASET_NAME)
+
+# Access the dataset attributes
+data = dataset[0]
+
+# Convert PyTorch Geometric data to NetworkX graph ---
+base_graph_dataset = pyg_utils.to_networkx(data, to_undirected=True)
 
 
 
 ### Inject anomalies in dataset ###
-    from pygod.generator import gen_contextual_outlier, gen_structural_outlier
+from pygod.generator import gen_contextual_outlier, gen_structural_outlier
 
-    # introduces anomalies (maybe poison I can't tell) to the train data in case the original dataset didnt have any
-    data, ya = gen_contextual_outlier(data, n=100, k=50) #In
-    data, ys = gen_structural_outlier(data, m=10, n=10)
-    data.y = torch.logical_or(ys, ya).long()
+# introduces anomalies (maybe poison I can't tell) to the train data in case the original dataset didnt have any
+data, ya = gen_contextual_outlier(data, n=100, k=50) #In
+data, ys = gen_structural_outlier(data, m=10, n=10)
+data.y = torch.logical_or(ys, ya).long()
 
-    # Convert PyTorch Geometric data to NetworkX graph ---
-    clean_graph_dataset = pyg_utils.to_networkx(data, to_undirected=True)
+
+data = load_data("inj_cora")
+y_binary: List[int] = data.y.bool()
+
+# Convert PyTorch Geometric data to NetworkX graph ---
+clean_graph_dataset = pyg_utils.to_networkx(data, to_undirected=True)
 
 
 ### Poison dataset ###
+from Poison.greedy import inject_greedy_poison
+from Poison.local_dice import LocalDICE
 
+if (POISON_TYPE == 'greedy'):
+    poisoned_graph_dataset = inject_greedy_poison(data, [2], seed = 0, budget = 35, print_stats = False)
+elif (POISON_TYPE == 'localDice'):
+    poisoned_graph_dataset = LocalDICE(data, [2], seed = 0, budget = 35, print_stats = False)
 
 ### Run model(s) ###
 

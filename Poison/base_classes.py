@@ -10,6 +10,46 @@ from pygod.detector import DOMINANT
 from pygod.utils import load_data
 from torch.utils.data import Dataset
 
+
+import numpy as np
+import torch_sparse
+
+class BasePoison(ABC):  #ABC means abstract base class
+    def __init__(self, data, budget = 0, target_node_indexes = []):
+        self.data = data
+        self.budget = budget
+        self.target_node_indexes = target_node_indexes
+
+        # Get individual properties
+        edge_index = data.edge_index.cpu()
+
+        if hasattr(data, "__num_nodes__"):
+            num_nodes = data.__num_nodes__
+        else:
+            num_nodes = data.num_nodes
+
+        #if dataset.edge_attr is None:
+            # If we have no edge attributes (in datasets such as Cora)
+        edge_weight = torch.ones(edge_index.size(1))
+        #else:
+            #edge_weight = dataset.edge_attr
+        edge_weight = edge_weight.cpu()
+
+        # csr_matrix((data, (row_ind, col_ind)), [shape=(M, N)])
+        adj = sp.csr_matrix((edge_weight, edge_index), (num_nodes, num_nodes))
+        adj.data = np.ones_like(adj.data)
+        adj = torch_sparse.SparseTensor.from_scipy(adj).coalesce().to("cpu")
+
+        # Extract attributes
+        node_attr_matrix = data.x.cpu().numpy()
+        self.node_attr = torch.from_numpy(node_attr_matrix).to("cpu")
+        self.labels = data.y.squeeze().to("cpu")
+        self.adj = adj
+    @abstractmethod
+    def poison_data(self):
+        pass
+
+
 class Poison(ABC):
     def __init__(
         self,
