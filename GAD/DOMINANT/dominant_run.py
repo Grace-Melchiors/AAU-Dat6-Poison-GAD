@@ -70,14 +70,11 @@ def train_dominant(args):
     #print size of the four above variables formatted with their names
     print('label', label.shape)
 
-
     adj = torch.FloatTensor(adj)
     adj_label = torch.FloatTensor(adj_label)
     attrs = torch.FloatTensor(attrs)
 
-
     model = Dominant(feat_size = attrs.size(1), hidden_size = args.hidden_dim, dropout = args.dropout)
-
 
     if args.device == 'cuda':
         device = torch.device(args.device)
@@ -105,6 +102,7 @@ def train_dominant(args):
             A_hat, X_hat = model(attrs, adj)
             loss, struct_loss, feat_loss = loss_func(adj_label, A_hat, attrs, X_hat, args.alpha)
             score = loss.detach().cpu().numpy()
+            print(f'Score size: {score.shape}')
             print("Epoch:", '%04d' % (epoch), 'Auc', roc_auc_score(label, score))
 
 
