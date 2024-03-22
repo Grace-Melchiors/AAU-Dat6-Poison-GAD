@@ -1,135 +1,8 @@
-import logging
-
-from torch_sparse import SparseTensor, coalesce
-import numpy as np
-from numba import jit
 import scipy.sparse as sp
-import torch
-from torch.nn import Identity
-from tqdm import tqdm
-
-from Utils.graph_utils import convert_scipy_sparse_matrix_to_sparse_tensor
-from models import MODEL_TYPE
-#from rgnn_at_scale.attacks.base_attack import SparseLocalAttack
-from Poison.base_classes import LocalPoison
-
-"""
-Implementation of the method proposed in the paper:
-'Adversarial Attacks on Neural Networks for Graph Data'
-by Daniel Zügner, Amir Akbarnejad and Stephan Günnemann,
-published at SIGKDD'18, August 2018, London, UK
-
-Copyright (C) 2018
-Daniel Zügner
-Technical University of Munich
-"""
-
-"""
-Source code from:
-https://github.com/sigeisler/robustness_of_gnns_at_scale/blob/main/rgnn_at_scale/attacks/nettack.py
-"""
+import numpy as np
 
 
-class Nettack(LocalPoison):
-    """Wrapper around the implementation of the method proposed in the paper:
-    'Adversarial Attacks on Neural Networks for Graph Data'
-    by Daniel Zügner, Amir Akbarnejad and Stephan Günnemann,
-    published at SIGKDD'18, August 2018, London, UK
-
-    Parameters
-    ----------
-    adj : torch_sparse.SparseTensor
-        [n, n] sparse adjacency matrix.
-    X : torch.Tensor
-        [n, d] feature matrix.
-    labels : torch.Tensor
-        Labels vector of shape [n].
-    idx_attack : np.ndarray
-        Indices of the nodes which are to be attacked [?].
-    model : GCN
-        Model to be attacked.
-    """
-
-    def __init__(self, **kwargs):
-        LocalPoison.__init__(self, **kwargs)
-
-        #assert self.make_undirected, 'Attack only implemented for undirected graphs'
-
-        #assert len(self.attacked_model.layers) == 2, "Nettack supports only 2 Layer Linear GCN as surrogate model"
-        #assert len(self.attacked_model.num_layers) == 2, "Nettack supports only 2 Layer Linear GCN as surrogate model"
-        #assert len(self.attacked_model.layers) == 2, "Nettack supports only 2 Layer Linear GCN as surrogate model"
-        #assert isinstance(self.attacked_model._modules['activation'], Identity), \
-        #    "Nettack only supports Linear GCN as surrogate model"
-
-        self.sp_adj = self.adj.to_scipy(layout="csr")
-        self.sp_attr = SparseTensor.from_dense(self.attr).to_scipy(layout="csr")
-        self.nettack = None
-
-    def _attack(self, n_perturbations: int, node_idx: int, **kwargs):
-        self.attacked_model.eval()
-        backbone = self.attacked_model.model
-        shared_encoder = backbone.shared_encoder
-        encoder_layers = shared_encoder.convs
-
-        first_layer_weights = encoder_layers[0].lin.weight.detach().cpu().numpy()
-
-        # Access the weights of the second layer and convert to NumPy array
-        second_layer_weights = encoder_layers[1].lin.weight.detach().cpu().numpy()
-
-        self.nettack = OriginalNettack(self.sp_adj,
-                                       self.sp_attr,
-                                       self.labels.detach().cpu().numpy(),
-                                       first_layer_weights,
-                                       second_layer_weights,
-                                       node_idx,
-                                       verbose=True)
-        self.nettack.reset()
-        self.nettack.attack_surrogate(n_perturbations,
-                                      perturb_structure=True,
-                                      perturb_features=False,
-                                      direct=True)
-
-        perturbed_idx = self.get_perturbed_edges().T
-
-        if self.make_undirected:
-            perturbed_idx = torch.cat((perturbed_idx, perturbed_idx.flip(0)), dim=-1)
-
-        A_rows, A_cols, A_vals = self.adj.coo()
-        A_idx = torch.stack([A_rows, A_cols], dim=0)
-
-        pert_vals = torch.where(
-            torch.diag(self.adj[perturbed_idx[0].tolist(), perturbed_idx[1].tolist()].to_dense()) == 0,
-            torch.ones_like(perturbed_idx[0]),
-            -torch.ones_like(perturbed_idx[0]))
-
-        # sparse addition: A + pert
-        A_idx = torch.cat((A_idx, perturbed_idx), dim=-1)
-        A_vals = torch.cat((A_vals, pert_vals))
-        A_idx, A_vals = coalesce(
-            A_idx,
-            A_vals,
-            m=self.n,
-            n=self.n,
-            op='sum'
-        )
-
-        self.adj_adversary = SparseTensor.from_edge_index(A_idx, A_vals, (self.n, self.n))
-
-    def get_logits(self, model: MODEL_TYPE, node_idx: int, perturbed_graph: SparseTensor = None) -> torch.Tensor:
-        if perturbed_graph is None:
-            perturbed_graph = self.adj
-
-        return model.to(self.device)(data=self.attr.to(self.device),
-            adj=perturbed_graph.to(self.device))[node_idx:node_idx + 1]
-
-    def get_perturbed_edges(self):
-        if self.nettack is None:
-            return torch.tensor([])
-
-        return torch.tensor(self.nettack.structure_perturbations)
-
-
-class OriginalNettack:
+class Nettack:
     """
     Nettack class used for poisoning attacks on node classification models.
     Copyright (C) 2018
@@ -167,7 +40,7 @@ class OriginalNettack:
         # GCN weight matrices
         self.W1 = W1
         self.W2 = W2
-        self.W = sp.csr_matrix(self.W1.dot(self.W2))
+        self.W = sp.csr_matrix(self.W1.T.dot(self.W2.T))
 
         self.cooc_matrix = self.X_obs.T.dot(self.X_obs).tolil()
         self.cooc_constraint = None
@@ -268,7 +141,9 @@ class OriginalNettack:
         """
 
         label_u_onehot = np.eye(self.K)[self.label_u]
-        return (logits - 1000 * label_u_onehot).argmax()
+        return (logits - 1000*label_u_onehot).argmax()
+    
+
 
     def feature_scores(self):
         """
@@ -623,8 +498,8 @@ class OriginalNettack:
                 self.feature_perturbations.append(tuple(best_feature_ix))
                 self.structure_perturbations.append(())
                 surrogate_losses.append(best_feature_score)
-        self.attr_adversary = convert_scipy_sparse_matrix_to_sparse_tensor(self.X_obs.tocoo())
-        self.adj_adversary = convert_scipy_sparse_matrix_to_sparse_tensor(self.adj_preprocessed.tocoo())
+        self.attr_adversary = sparse_tensor(self.X_obs.tocoo())
+        self.adj_adversary = sparse_tensor(self.adj_preprocessed.tocoo())
 
     def reset(self):
         """
@@ -637,246 +512,6 @@ class OriginalNettack:
         self.influencer_nodes = []
         self.potential_edges = []
         self.cooc_constraint = None
-
-
-@jit(nopython=True)
-def connected_after(u, v, connected_before, delta):
-    if u == v:
-        if delta == -1:
-            return False
-        else:
-            return True
-    else:
-        return connected_before
-
-
-@jit(nopython=True)
-def compute_new_a_hat_uv(edge_ixs, node_nb_ixs, edges_set, twohop_ixs, values_before, degs, potential_edges, u):
-    """
-    Compute the new values [A_hat_square]_u for every potential edge, where u is the target node. C.f. Theorem 5.1
-    equation 17.
-
-    Parameters
-    ----------
-    edge_ixs: np.array, shape [E,2], where E is the number of edges in the graph.
-        The indices of the nodes connected by the edges in the input graph.
-    node_nb_ixs: np.array, shape [N,], dtype int
-        For each node, this gives the first index of edges associated to this node in the edge array (edge_ixs).
-        This will be used to quickly look up the neighbors of a node, since numba does not allow nested lists.
-    edges_set: set((e0, e1))
-        The set of edges in the input graph, i.e. e0 and e1 are two nodes connected by an edge
-    twohop_ixs: np.array, shape [T, 2], where T is the number of edges in A_tilde^2
-        The indices of nodes that are in the twohop neighborhood of each other, including self-loops.
-    values_before: np.array, shape [N,], the values in [A_hat]^2_uv to be updated.
-    degs: np.array, shape [N,], dtype int
-        The degree of the nodes in the input graph.
-    potential_edges: np.array, shape [P, 2], where P is the number of potential edges.
-        The potential edges to be evaluated. For each of these potential edges, this function will compute the values
-        in [A_hat]^2_uv that would result after inserting/removing this edge.
-    u: int
-        The target node
-
-    Returns
-    -------
-    return_ixs: List of tuples
-        The ixs in the [P, N] matrix of updated values that have changed
-    return_values:
-
-    """
-    N = degs.shape[0]
-
-    twohop_u = twohop_ixs[twohop_ixs[:, 0] == u, 1]
-    nbs_u = edge_ixs[edge_ixs[:, 0] == u, 1]
-    nbs_u_set = set(nbs_u)
-
-    return_ixs = []
-    return_values = []
-
-    for ix in range(len(potential_edges)):
-        edge = potential_edges[ix]
-        edge_set = set(edge)
-        degs_new = degs.copy()
-        delta = -2 * ((edge[0], edge[1]) in edges_set) + 1
-        degs_new[edge] += delta
-
-        nbs_edge0 = edge_ixs[edge_ixs[:, 0] == edge[0], 1]
-        nbs_edge1 = edge_ixs[edge_ixs[:, 0] == edge[1], 1]
-
-        affected_nodes = set(np.concatenate((twohop_u, nbs_edge0, nbs_edge1)))
-        affected_nodes = affected_nodes.union(edge_set)
-        a_um = edge[0] in nbs_u_set
-        a_un = edge[1] in nbs_u_set
-
-        a_un_after = connected_after(u, edge[0], a_un, delta)
-        a_um_after = connected_after(u, edge[1], a_um, delta)
-
-        for v in affected_nodes:
-            a_uv_before = v in nbs_u_set
-            a_uv_before_sl = a_uv_before or v == u
-
-            if v in edge_set and u in edge_set and u != v:
-                if delta == -1:
-                    a_uv_after = False
-                else:
-                    a_uv_after = True
-            else:
-                a_uv_after = a_uv_before
-            a_uv_after_sl = a_uv_after or v == u
-
-            from_ix = node_nb_ixs[v]
-            to_ix = node_nb_ixs[v + 1] if v < N - 1 else len(edge_ixs)
-            node_nbs = edge_ixs[from_ix:to_ix, 1]
-            node_nbs_set = set(node_nbs)
-            a_vm_before = edge[0] in node_nbs_set
-
-            a_vn_before = edge[1] in node_nbs_set
-            a_vn_after = connected_after(v, edge[0], a_vn_before, delta)
-            a_vm_after = connected_after(v, edge[1], a_vm_before, delta)
-
-            mult_term = 1 / np.sqrt(degs_new[u] * degs_new[v])
-
-            sum_term1 = np.sqrt(degs[u] * degs[v]) * values_before[v] - a_uv_before_sl / degs[u] - a_uv_before / \
-                degs[v]
-            sum_term2 = a_uv_after / degs_new[v] + a_uv_after_sl / degs_new[u]
-            sum_term3 = -((a_um and a_vm_before) /
-                          degs[edge[0]]) + (a_um_after and a_vm_after) / degs_new[edge[0]]
-            sum_term4 = -((a_un and a_vn_before) /
-                          degs[edge[1]]) + (a_un_after and a_vn_after) / degs_new[edge[1]]
-            new_val = mult_term * \
-                (sum_term1 + sum_term2 + sum_term3 + sum_term4)
-
-            return_ixs.append((ix, v))
-            return_values.append(new_val)
-
-    return return_ixs, return_values
-
-
-def compute_alpha(n, S_d, d_min):
-    """
-    Approximate the alpha of a power law distribution.
-
-    Parameters
-    ----------
-    n: int or np.array of int
-        Number of entries that are larger than or equal to d_min
-
-    S_d: float or np.array of float
-         Sum of log degrees in the distribution that are larger than or equal to d_min
-
-    d_min: int
-        The minimum degree of nodes to consider
-
-    Returns
-    -------
-    alpha: float
-        The estimated alpha of the power law distribution
-    """
-
-    return n / (S_d - n * np.log(d_min - 0.5)) + 1
-
-
-def update_Sx(S_old, n_old, d_old, d_new, d_min):
-    """
-    Update on the sum of log degrees S_d and n based on degree distribution resulting from inserting or deleting
-    a single edge.
-
-    Parameters
-    ----------
-    S_old: float
-         Sum of log degrees in the distribution that are larger than or equal to d_min.
-
-    n_old: int
-        Number of entries in the old distribution that are larger than or equal to d_min.
-
-    d_old: np.array, shape [N,] dtype int
-        The old degree sequence.
-
-    d_new: np.array, shape [N,] dtype int
-        The new degree sequence
-
-    d_min: int
-        The minimum degree of nodes to consider
-
-    Returns
-    -------
-    new_S_d: float, the updated sum of log degrees in the distribution that are larger than or equal to d_min.
-    new_n: int, the updated number of entries in the old distribution that are larger than or equal to d_min.
-    """
-
-    old_in_range = d_old >= d_min
-    new_in_range = d_new >= d_min
-
-    d_old_in_range = np.multiply(d_old, old_in_range)
-    d_new_in_range = np.multiply(d_new, new_in_range)
-
-    new_S_d = S_old - np.log(np.maximum(d_old_in_range, 1)
-                             ).sum(1) + np.log(np.maximum(d_new_in_range, 1)).sum(1)
-    new_n = n_old - np.sum(old_in_range, 1) + np.sum(new_in_range, 1)
-
-    return new_S_d, new_n
-
-
-def compute_log_likelihood(n, alpha, S_d, d_min):
-    """
-    Compute log likelihood of the powerlaw fit.
-
-    Parameters
-    ----------
-    n: int
-        Number of entries in the old distribution that are larger than or equal to d_min.
-
-    alpha: float
-        The estimated alpha of the power law distribution
-
-    S_d: float
-         Sum of log degrees in the distribution that are larger than or equal to d_min.
-
-    d_min: int
-        The minimum degree of nodes to consider
-
-    Returns
-    -------
-    float: the estimated log likelihood
-    """
-
-    return n * np.log(alpha) + n * alpha * np.log(d_min) + (alpha + 1) * S_d
-
-
-def filter_singletons(edges, adj):
-    """
-    Filter edges that, if removed, would turn one or more nodes into singleton nodes.
-
-    Parameters
-    ----------
-    edges: np.array, shape [P, 2], dtype int, where P is the number of input edges.
-        The potential edges.
-
-    adj: sp.sparse_matrix, shape [N,N]
-        The input adjacency matrix.
-
-    Returns
-    -------
-    np.array, shape [P, 2], dtype bool:
-        A binary vector of length len(edges), False values indicate that the edge at
-        the index  generates singleton edges, and should thus be avoided.
-
-    """
-
-    degs = np.squeeze(np.array(np.sum(adj, 0)))
-    existing_edges = np.squeeze(np.array(adj.tocsr()[tuple(edges.T)]))
-    if existing_edges.size > 0:
-        edge_degrees = degs[np.array(edges)] + 2 * \
-            (1 - existing_edges[:, None]) - 1
-    else:
-        edge_degrees = degs[np.array(edges)] + 1
-
-    zeros = edge_degrees == 0
-    zeros_sum = zeros.sum(1)
-    return zeros_sum == 0
-
-
-def filter_chisquare(ll_ratios, cutoff):
-    return ll_ratios < cutoff
 
 
 def preprocess_graph(adj):
