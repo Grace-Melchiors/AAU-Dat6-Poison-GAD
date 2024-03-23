@@ -118,7 +118,6 @@ class Dominant(nn.Module):
         self.struct_decoder = Structure_Decoder(hidden_size, dropout)
 
         self.device = torch.device(args.device)
-        print("Device is CUDA")
         self.adj = adj.to(self.device).requires_grad_(True)
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
         self.attrs = attrs.to(self.device).requires_grad_(True)
@@ -149,11 +148,8 @@ class Dominant(nn.Module):
             self.train()
             optimizer.zero_grad()
             A_hat, X_hat = self.forward(self.attrs, self.adj)
-            print(f'Shape AHAT {A_hat.shape}, shape XHAT {X_hat.shape}')
             loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, args.alpha)
-            print(loss)
             l = torch.mean(loss)
-            print(l)
             l.backward()
             optimizer.step()        
             print("Epoch:", '%04d' % (epoch), "train_loss=", "{:.5f}".format(l.item()), "train/struct_loss=", "{:.5f}".format(struct_loss.item()),"train/feat_loss=", "{:.5f}".format(feat_loss.item()))
@@ -178,7 +174,7 @@ def normalize_adj(adj):
 
 def load_anomaly_detection_dataset(dataset, datadir='data'):
     # import dataset and extract its parts
-    dataset = load_data("inj_cora")
+    #dataset = load_data("inj_cora")
     edge_index = dataset.edge_index
     adj = to_dense_adj(edge_index)[0].detach().cpu().numpy()
 
@@ -228,10 +224,12 @@ if __name__ == '__main__':
     #print size of the four above variables formatted with their names
     #print('label', label.shape)
 
-    adj, attrs, label, adj_label = load_anomaly_detection_dataset(args.dataset)
+    dataset = load_data("inj_cora")
+    adj, attrs, label, adj_label = load_anomaly_detection_dataset(dataset)
     adj = torch.FloatTensor(adj)
     adj_label = torch.FloatTensor(adj_label)
     attrs = torch.FloatTensor(attrs)
+
 
     model = Dominant(feat_size = attrs.size(1), hidden_size = args.hidden_dim, dropout = args.dropout, device = args.device, adj=adj, adj_label=adj_label, attrs=attrs, label=label)
 

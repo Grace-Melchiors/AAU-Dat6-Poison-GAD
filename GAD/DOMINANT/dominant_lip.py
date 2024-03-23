@@ -190,6 +190,13 @@ def normalize_adj(adj):
     d_mat_inv_sqrt = sp.diags(d_inv_sqrt)
     return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()
 
+def get_n_anomaly_indexes(truth, n_anomalies):
+    indexes = np.where(truth == 1)[0]
+    # get the first n_anomalies indexes
+    indexes = indexes[:n_anomalies]
+    print(f'Anomalies indexes: {indexes}')
+    return indexes
+
 def load_anomaly_detection_dataset(dataset, datadir='data'):
     # import dataset and extract its parts
     dataset = load_data("inj_cora")
@@ -202,6 +209,10 @@ def load_anomaly_detection_dataset(dataset, datadir='data'):
     # TODO: handle the case where we inject ourselves
     truth = dataset.y.bool().detach().cpu().numpy()
     truth = truth.flatten()
+    
+    #Anomalies indexes: [ 10  50  70  76 104 124 127 143 151 170]
+    anomaly_indexes = get_n_anomaly_indexes(truth, 10)
+
 
     adj_norm = normalize_adj(adj + sp.eye(adj.shape[0]))
     adj_norm = adj_norm.toarray()
