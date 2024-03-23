@@ -3,22 +3,31 @@ import scipy.sparse as sp
 import torch
 import scipy.io as sio
 import random
+import pygod
 
 
 import torch_geometric
 from torch_geometric.datasets import Planetoid
+from pygod.utils import load_data
+from torch_geometric.utils import to_dense_adj
 
 def load_anomaly_detection_dataset(dataset='Cora', datadir='data'):
-    dataset = Planetoid(root=datadir, name=dataset)
-    data = dataset[0]
-    
-    adj_norm = normalize_adj(data.edge_index) # 
+    # dataset = Planetoid(root=datadir, name=dataset)
+    # data = dataset[0]
+    data = load_data('inj_cora')
+
+    edge_index = data.edge_index   # adjacency matrix
+
+    # .detach().cpu().numpy() --> converts the tensor to a numpy array
+    adj = to_dense_adj(edge_index)[0].detach().cpu().numpy()
+
+    adj_norm = normalize_adj(adj) # 
     adj_norm = adj_norm.toarray()
-    
-    adj = data.edge_index   # adjacency matrix
-    feat = data.x.numpy()   # node features
-    truth = data.y.numpy()  # truth labels
-    
+
+    # again detach from tensor to numpy array
+    feat = data.x.detach().cpu().numpy()   # node features
+    truth = data.y.bool()  # truth labels
+
     return adj_norm, feat, truth, adj
 
 

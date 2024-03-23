@@ -62,7 +62,7 @@ class GraphConvolution(Module):
 
         # Performs a linear transformation
         #   matrix multiplication between the input tensor and weight tensor, i.e. linear transform of the input features by the learnable weights
-        support = torch.nn(input, self.weight)
+        support = torch.mm(input, self.weight)
 
         # performs sparse matrix multiplication and generates the final output of the graph convolutional layer
         #   i.e. Utilize sparse matrix multiplication with the adjacency matrix to incorporate neighborhood information
