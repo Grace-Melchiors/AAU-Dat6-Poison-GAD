@@ -151,6 +151,9 @@ def load_anomaly_detection_dataset(dataset, datadir='data'):
 def get_n_anomaly_indexes(truth, n_anomalies):
     indexes = np.where(truth == 1)[0]
     # get the first n_anomalies indexes
-    indexes = indexes[:n_anomalies]
+    if n_anomalies != 999:
+
+        indexes = indexes[:n_anomalies]
+
     print(f'Anomalies indexes: {indexes}')
     return indexes

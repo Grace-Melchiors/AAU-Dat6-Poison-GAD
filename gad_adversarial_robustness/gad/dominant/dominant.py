@@ -149,15 +149,38 @@ class Dominant(nn.Module):
             l = torch.mean(loss)
             l.backward()
             optimizer.step()        
-            print("Epoch:", '%04d' % (epoch), "train_loss=", "{:.5f}".format(l.item()), "train/struct_loss=", "{:.5f}".format(struct_loss.item()),"train/feat_loss=", "{:.5f}".format(feat_loss.item()))
+            #print("Epoch:", '%04d' % (epoch), "train_loss=", "{:.5f}".format(l.item()), "train/struct_loss=", "{:.5f}".format(struct_loss.item()),"train/feat_loss=", "{:.5f}".format(feat_loss.item()))
 
             if epoch%10 == 0 or epoch == args.epoch - 1:
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.adj)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, args.alpha)
                 score = loss.detach().cpu().numpy()
-                print(f'Score size: {score.shape}')
+                #print(f'Score size: {score.shape}')
                 print("Epoch:", '%04d' % (epoch), 'Auc', roc_auc_score(self.label, score))
+
+                """
+                indices = np.where(self.label == 1)[0]
+
+                # Filter label and score arrays to include only nodes with label == 1
+                filtered_label = self.label[indices]
+                filtered_score = score[indices]
+
+                threshold = 0.8
+
+                # Convert filtered_score to predicted labels based on the threshold
+                predicted_labels = (filtered_score >= threshold).astype(int)
+
+                from sklearn.metrics import accuracy_score
+
+                # Calculate accuracy
+
+                accuracy = accuracy_score(filtered_label, predicted_labels)
+                print(f'Epoch {epoch} Accuracy: {accuracy}')
+
+                #print("Epoch:", '%04d' % (epoch) 'Accuracy:', accuracy)
+                """
+
 
 
 def normalize_adj(adj):

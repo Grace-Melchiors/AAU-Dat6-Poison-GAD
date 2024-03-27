@@ -106,13 +106,14 @@ class Structure_Decoder(nn.Module):
 
 class DominantLIP(nn.Module):
     def __init__(self, feat_size, hidden_size, dropout, device, adj, adj_label, attrs, label, lip_const):
-        super(Dominant, self).__init__()
+        super(DominantLIP, self).__init__()
         
+        self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
         self.attr_decoder = Attribute_Decoder(feat_size, hidden_size, dropout)
         self.struct_decoder = Structure_Decoder(hidden_size, dropout)
 
-        self.device = torch.device(args.device)
+        self.device = torch.device(self.device)
         print("Device is CUDA")
         self.adj = adj.to(self.device).requires_grad_(True)
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
@@ -145,27 +146,49 @@ class DominantLIP(nn.Module):
             self.train()
             optimizer.zero_grad()
             A_hat, X_hat = self.forward(self.attrs, self.adj)
-            print(f'Shape AHAT {A_hat.shape}, shape XHAT {X_hat.shape}')
+            #print(f'Shape AHAT {A_hat.shape}, shape XHAT {X_hat.shape}')
             loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, args.alpha)
             
             # Lipschitz regularization
             lip_loss = self.lipschitz_loss()
             loss += args.lip_weight * lip_loss
             
-            print(loss)
             l = torch.mean(loss)
-            print(l)
             l.backward()
             optimizer.step()        
-            print("Epoch:", '%04d' % (epoch), "train_loss=", "{:.5f}".format(l.item()), "train/struct_loss=", "{:.5f}".format(struct_loss.item()),"train/feat_loss=", "{:.5f}".format(feat_loss.item()))
+            #print("Epoch:", '%04d' % (epoch), "train_loss=", "{:.5f}".format(l.item()), "train/struct_loss=", "{:.5f}".format(struct_loss.item()),"train/feat_loss=", "{:.5f}".format(feat_loss.item()))
 
             if epoch%10 == 0 or epoch == args.epoch - 1:
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.adj)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, args.alpha)
                 score = loss.detach().cpu().numpy()
-                print(f'Score size: {score.shape}')
+                #print(f'Score size: {score.shape}')
                 print("Epoch:", '%04d' % (epoch), 'Auc', roc_auc_score(self.label, score))
+
+                """
+                indices = np.where(self.label == 1)[0]
+
+                # Filter label and score arrays to include only nodes with label == 1
+                filtered_label = self.label[indices]
+                filtered_score = score[indices]
+
+                threshold = 0.8
+
+                # Convert filtered_score to predicted labels based on the threshold
+                predicted_labels = (filtered_score >= threshold).astype(int)
+
+                from sklearn.metrics import accuracy_score
+
+                # Calculate accuracy
+
+                accuracy = accuracy_score(filtered_label, predicted_labels)
+                print(f'Epoch {epoch} Accuracy: {accuracy}')
+                """
+
+
+
+                
                 
     def lipschitz_loss(self):
         lip_loss = 0.0
@@ -209,7 +232,6 @@ def loss_func(adj, A_hat, attrs, X_hat, alpha):
     diff_structure = torch.pow(A_hat - adj, 2)
     structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 1))
     structure_cost = torch.mean(structure_reconstruction_errors)
-
 
     cost =  alpha * attribute_reconstruction_errors + (1-alpha) * structure_reconstruction_errors
 
