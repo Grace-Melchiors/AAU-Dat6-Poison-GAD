@@ -1,0 +1,6 @@
+hidden_dim: 64
+epochs: 100
+lr: 0.005
+dropout: 0.3
+alpha: 0.8
+device: cpu

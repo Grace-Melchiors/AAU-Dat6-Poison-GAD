@@ -20,7 +20,8 @@ import torch
 from torch_geometric.utils import to_dense_adj
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from pygod.utils import load_data
-from gad_adversarial_robustness.utils.graph_utils import normalize_adj
+from torch import autograd
+
 
 class GraphConvolution(Module):
     """
@@ -45,6 +46,7 @@ class GraphConvolution(Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input, adj):
+
         support = torch.mm(input, self.weight)
         output = torch.spmm(adj, support)
         if self.bias is not None:
@@ -105,7 +107,7 @@ class Structure_Decoder(nn.Module):
         return x
 
 class DominantLIP(nn.Module):
-    def __init__(self, feat_size, hidden_size, dropout, device, adj, adj_label, attrs, label, lip_const):
+    def __init__(self, feat_size, hidden_size, dropout, device, adj, adj_label, attrs, label):
         super(DominantLIP, self).__init__()
         
         self.device = device
@@ -114,13 +116,14 @@ class DominantLIP(nn.Module):
         self.struct_decoder = Structure_Decoder(hidden_size, dropout)
 
         self.device = torch.device(self.device)
-        print("Device is CUDA")
+        # This adjacency matrix is already normalized
         self.adj = adj.to(self.device).requires_grad_(True)
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
         self.attrs = attrs.to(self.device).requires_grad_(True)
         
         self.label = label
-        self.lip_const = lip_const
+
+    from torch_geometric.data import Data
 
     
     def forward(self, x, adj):
@@ -132,8 +135,39 @@ class DominantLIP(nn.Module):
         struct_reconstructed = self.struct_decoder(x, adj)
         # return reconstructed matrices
         return struct_reconstructed, x_hat
+    
+    def lip_reg(self, features: torch.Tensor, adj, idx_train = None):
+        lip_mat = []
+        input = features.detach().clone()
+        input.to_dense()
+        input.requires_grad_(True)
+        print("Forward Pass")
+        output = self.forward(input, adj)[0]
+        # Creates a zeros 
 
-    def fit(self, args):
+        for i in range(output.shape[1]):
+            v = torch.zeros_like(output)
+            # Create x tensors each with 1's in different columns.
+            v[:, i] = 1
+            print("Autograd")
+            gradients = autograd.grad(outputs=output, inputs=input, grad_outputs=v,
+                                      create_graph=True, retain_graph=True, only_inputs=True)[0]
+            #gradients = gradients[idx_train]  
+            grad_norm = torch.norm(gradients, dim=1).unsqueeze(dim=1)
+            print("Appending")
+            lip_mat.append(grad_norm)
+        
+        input.requires_grad_(False)
+        # Concatenate all the matrices in lip_mat along the 1st dim (cols) 
+        print("Concat")
+        lip_concat = torch.cat(lip_mat, dim=1)
+        lip_con_norm = torch.norm(lip_concat, dim=1)
+        lip_loss = torch.max(lip_con_norm)
+        return lip_loss
+
+
+
+    def fit(self, gamma, args):
         
         #if args.device == 'cuda':
                         #model = self.cuda()
@@ -146,13 +180,7 @@ class DominantLIP(nn.Module):
             self.train()
             optimizer.zero_grad()
             A_hat, X_hat = self.forward(self.attrs, self.adj)
-            #print(f'Shape AHAT {A_hat.shape}, shape XHAT {X_hat.shape}')
             loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, args.alpha)
-            
-            # Lipschitz regularization
-            lip_loss = self.lipschitz_loss()
-            loss += args.lip_weight * lip_loss
-            
             l = torch.mean(loss)
             l.backward()
             optimizer.step()        
@@ -162,6 +190,9 @@ class DominantLIP(nn.Module):
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.adj)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, args.alpha)
+                # We add a term for the lipschitz regularization to the loss
+
+                loss  = loss + gamma * self.lip_reg(self.attrs, self.adj)
                 score = loss.detach().cpu().numpy()
                 #print(f'Score size: {score.shape}')
                 print("Epoch:", '%04d' % (epoch), 'Auc', roc_auc_score(self.label, score))
@@ -184,44 +215,25 @@ class DominantLIP(nn.Module):
 
                 accuracy = accuracy_score(filtered_label, predicted_labels)
                 print(f'Epoch {epoch} Accuracy: {accuracy}')
+
+                #print("Epoch:", '%04d' % (epoch) 'Accuracy:', accuracy)
                 """
 
 
 
-                
-                
-    def lipschitz_loss(self):
-        lip_loss = 0.0
-        for layer in self.modules():
-            if isinstance(layer, GraphConvolution):
-                weight = layer.weight
-                lip_loss += torch.mean(torch.max(torch.sum(torch.abs(weight), dim=1) - self.lip_const, torch.tensor(0.0)))
-        return lip_loss
+def normalize_adj(adj):
+    """Symmetrically normalize adjacency matrix."""
+    adj = sp.coo_matrix(adj)
+    rowsum = np.array(adj.sum(1))
+    d_inv_sqrt = np.power(rowsum, -0.5).flatten()
+    d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.
+    d_mat_inv_sqrt = sp.diags(d_inv_sqrt)
+    return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()
 
 
 
-
-def load_anomaly_detection_dataset(dataset, datadir='data'):
-    # import dataset and extract its parts
-    dataset = load_data("inj_cora")
-    edge_index = dataset.edge_index
-    adj = to_dense_adj(edge_index)[0].detach().cpu().numpy()
-
-    
-    feat= dataset.x.detach().cpu().numpy()
-    # remember to use .bool() if the dataset is an injected dataset, to enable binary labels.
-    # TODO: handle the case where we inject ourselves
-    truth = dataset.y.bool().detach().cpu().numpy()
-    truth = truth.flatten()
-    
-    #Anomalies indexes: [ 10  50  70  76 104 124 127 143 151 170]
-
-    adj_norm = normalize_adj(adj + sp.eye(adj.shape[0]))
-    adj_norm = adj_norm.toarray()
-    adj = adj + np.eye(adj.shape[0])
-    return adj_norm, feat, truth, adj
-
-
+# This loss function is different than the one in dominant.py
+# We modify the loss function we add a regularization term for Lipschitz.
 def loss_func(adj, A_hat, attrs, X_hat, alpha):
     # Attribute reconstruction loss
     diff_attribute = torch.pow(X_hat - attrs, 2)
@@ -232,6 +244,7 @@ def loss_func(adj, A_hat, attrs, X_hat, alpha):
     diff_structure = torch.pow(A_hat - adj, 2)
     structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 1))
     structure_cost = torch.mean(structure_reconstruction_errors)
+
 
     cost =  alpha * attribute_reconstruction_errors + (1-alpha) * structure_reconstruction_errors
 
@@ -246,21 +259,25 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.3, help='Dropout rate')
     parser.add_argument('--alpha', type=float, default=0.8, help='balance parameter')
     parser.add_argument('--device', default='cpu', type=str, help='cuda/cpu')
-    parser.add_argument('--lip_const', type=float, default=1.0, help='Lipschitz constant')
-    parser.add_argument('--lip_weight', type=float, default=0.1, help='Lipschitz regularization weight')
 
     args = parser.parse_args()
+    print(f'args: {args}')
 
     #adj, attrs, label, adj_label = load_anomaly_detection_dataset(args.dataset)
 
     #print size of the four above variables formatted with their names
     #print('label', label.shape)
 
-    adj, attrs, label, adj_label = load_anomaly_detection_dataset(args.dataset)
-    adj = torch.FloatTensor(adj)
-    adj_label = torch.FloatTensor(adj_label)
-    attrs = torch.FloatTensor(attrs)
+    dataset = load_data("inj_cora")
+    adj, attrs, poison_label, adj_label = load_anomaly_detection_dataset(dataset)
+    poison_adj = torch.FloatTensor(adj)
+    poison_adj_label = torch.FloatTensor(adj_label)
+    poison_attrs = torch.FloatTensor(attrs)
 
-    model = DominantLIP(feat_size = attrs.size(1), hidden_size = args.hidden_dim, dropout = args.dropout, device = args.device, adj=adj, adj_label=adj_label, attrs=attrs, label=label, lip_const=args.lip_const)
 
-    model.fit(args)
+    #model = DominantLIP(feat_size = attrs.size(1), hidden_size = args.hidden_dim, dropout = args.dropout, device = args.device, adj=adj, adj_label=adj_label, attrs=attrs, label=label)
+    print("DOMINANT_LIP ACCURACY: ")
+    dominant_lip = DominantLIP(feat_size = poison_attrs.size(1), hidden_size = args.hidden_dim, dropout = args.dropout, device = args.device, adj=poison_adj, adj_label=poison_adj_label, attrs=poison_attrs, label=poison_label)
+    dominant_lip.fit(0.001, args)
+
+    dominant_lip.fit(args)
