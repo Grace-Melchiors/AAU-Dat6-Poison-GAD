@@ -104,7 +104,7 @@ class Dominant(nn.Module):
         struct_reconstructed = self.struct_decoder(x, adj)
         return struct_reconstructed, x_hat
 
-    def fit(self, config: dict):
+    def fit(self, config: dict, verbose: bool = False):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['lr'])
 
         for epoch in range(config['epochs']):
@@ -115,8 +115,9 @@ class Dominant(nn.Module):
             loss = torch.mean(loss)
             loss.backward()
             optimizer.step()
-            print(f"Epoch: {epoch:04d}, train_loss={loss.item():.5f}, "
-                  f"train/struct_loss={struct_loss.item():.5f}, train/feat_loss={feat_loss.item():.5f}")
+            if verbose:
+                print(f"Epoch: {epoch:04d}, train_loss={loss.item():.5f}, "
+                    f"train/struct_loss={struct_loss.item():.5f}, train/feat_loss={feat_loss.item():.5f}")
 
             if epoch % 10 == 0 or epoch == config['epochs'] - 1:
                 self.eval()
