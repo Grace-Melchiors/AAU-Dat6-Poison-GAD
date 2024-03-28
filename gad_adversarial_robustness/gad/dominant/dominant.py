@@ -119,7 +119,7 @@ class Dominant(nn.Module):
                 print(f"Epoch: {epoch:04d}, train_loss={loss.item():.5f}, "
                     f"train/struct_loss={struct_loss.item():.5f}, train/feat_loss={feat_loss.item():.5f}")
 
-            if epoch % 10 == 0 or epoch == config['epochs'] - 1:
+            if (epoch % 10 == 0 and verbose) or epoch == config['epochs'] - 1:
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.adj)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['alpha'])
