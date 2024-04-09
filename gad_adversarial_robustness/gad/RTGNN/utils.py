@@ -54,7 +54,10 @@ def multiclass_noisify(y, P, random_state=0):
     for idx in np.arange(m):
         i = y[idx]
         # draw a vector with only an 1
-        flipped = flipper.multinomial(1, P[i, :], 1)[0]
+        # flipped = flipper.multinomial(1, P[i, :], 1)[0] # n, pval, size : where pvals is sequence of floats, length p
+        # flipped = flipper.multinomial(1, P[i, :, np.newaxis], 1)[0]
+        # flipped = flipper.multinomial(1, P[i, :][np.newaxis, :], 1)[0]
+        flipped = flipper.multinomial(1, P[i, :].reshape(1, -1), 1)[0]
         new_y[idx] = np.where(flipped == 1)[0]
 
     return new_y
@@ -110,6 +113,9 @@ def noisify_with_P(y_train, train_num,  nb_classes, noise, random_state=None,  n
             P = build_pair_p(nb_classes, noise)
         else:
             print('Noise type have implemented')
+        
+        print("probability matrix P:",P) # debugging, P is a 2d array of dim: 3x3 right now
+        
         # seed the random numbers with #run
         y_train_noisy = multiclass_noisify(y_train, P=P,
                                            random_state=random_state)
