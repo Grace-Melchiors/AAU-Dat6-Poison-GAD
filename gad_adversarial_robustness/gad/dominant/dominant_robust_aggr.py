@@ -17,6 +17,7 @@ from torch import Tensor
 from torch_geometric.typing import Adj, OptTensor, SparseTensor, Optional
 from gad_adversarial_robustness.defenses.truncated_svd import get_truncated_svd
 from gad_adversarial_robustness.defenses.jaccard import get_jaccard
+from gad_adversarial_robustness.defenses.gdc import get_ppr_matrix
 
 print(torch.cuda.is_available())
 
@@ -80,13 +81,12 @@ class RGNNConv(GCNConv):
                  mean_kwargs: Dict[str, Any] = dict(k=64, temperature=1.0, with_weight_correction=True),
                  ):
         super().__init__(in_channels, out_channels)
-        #self._mean = ROBUST_MEANS[mean]
-        self._mean = soft_weighted_medoid_k_neighborhood
+        self._mean = ROBUST_MEANS[mean]
+        #self._mean = soft_weighted_medoid_k_neighborhood
         self._mean_kwargs = mean_kwargs
 
     def message_and_aggregate(self, adj_t) -> torch.Tensor:
         return NotImplemented
-    
     
     def propagate(self, edge_index: torch.Tensor, size=None, **kwargs) -> torch.Tensor:
         x = kwargs['x']
@@ -102,7 +102,9 @@ class Encoder(nn.Module):
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.gc1(x, edge_index))
+        gc1 = self.gc1(x, edge_index)
+        #print(f'First element in embeddings after first forward pass: {gc1[0]}')
+        x = F.relu(gc1)
         x = F.dropout(x, self.dropout, training=self.training)
         x = F.relu(self.gc2(x, edge_index))
         return x
@@ -145,7 +147,7 @@ class StructureDecoder(nn.Module):
 
 class Dominant(nn.Module):
     def __init__(self, feat_size: int, hidden_size: int, dropout: float, device: str, 
-                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: torch.Tensor, svd_params: Optional[Dict[str, float]] = None, jaccard_params: Optional[Dict[str, float]] = None):
+                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: torch.Tensor, svd_params: Optional[Dict[str, float]] = None, jaccard_params: Optional[Dict[str, float]] = None, gdc_params: Optional[Dict[str, float]] = None):
         super(Dominant, self).__init__()
         self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
@@ -158,6 +160,7 @@ class Dominant(nn.Module):
         self.label = label.to(self.device)
         self._svd_params = svd_params
         self._jaccard_params = jaccard_params
+        self._gdc_params = gdc_params
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # Perform preprocessing such as SVD, GDC or Jaccard
@@ -238,6 +241,16 @@ class Dominant(nn.Module):
             edge_idx, edge_weight = adj.indices(), adj.values()
             del adj
         
+        elif self._gdc_params is not None:
+            adj = get_ppr_matrix(
+                torch.sparse.FloatTensor(edge_idx, torch.ones_like(edge_idx[0], dtype=torch.float32)),
+                **self._gdc_params,
+                normalize_adjacency_matrix=True
+            )
+            edge_idx, edge_weight = adj.indices(), adj.values()
+            del adj
+
+
         return edge_idx, edge_weight
 
 
@@ -293,11 +306,16 @@ if __name__ == '__main__':
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
 
-    jaccard_params= {
+    jaccard_params = {
         "threshold": 0.01
     }
 
+    gdc_params = {
+        "alpha": 0.15,
+        "k": 64
+    }
+
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label, jaccard_params=jaccard_params)
+                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
     model.to(config['model']['device'])
     model.fit(config, verbose=True)
