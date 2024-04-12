@@ -4,7 +4,7 @@ model:
   lr: 0.005
   dropout: 0.3
   alpha: 0.7
-  device: cpu
+  device: cuda
   latent_dim: 48
   ddpm_timesteps: 400
   ddpm_loss_weight: 0.6
