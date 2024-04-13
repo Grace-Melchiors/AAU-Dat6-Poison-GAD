@@ -9,10 +9,10 @@ from torch_geometric.utils import to_dense_adj
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv
 from sklearn.metrics import roc_auc_score
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Sequence, Tuple, Union
 from pygod.utils import load_data
 import torch_geometric
-from gad_adversarial_robustness.gad.dominant.means import ROBUST_MEANS, soft_weighted_medoid_k_neighborhood
+from gad_adversarial_robustness.gad.dominant.means import ROBUST_MEANS, soft_weighted_medoid_k_neighborhood, chunked_message_and_aggregate
 from torch import Tensor
 from torch_geometric.typing import Adj, OptTensor, SparseTensor, Optional
 from gad_adversarial_robustness.defenses.truncated_svd import get_truncated_svd
@@ -20,6 +20,8 @@ from gad_adversarial_robustness.defenses.jaccard import get_jaccard
 from gad_adversarial_robustness.defenses.gdc import get_ppr_matrix
 
 print(torch.cuda.is_available())
+
+
 
 
 class ChainableGCNConv(GCNConv):
@@ -80,19 +82,33 @@ class RGNNConv(GCNConv):
     def __init__(self, in_channels: int, out_channels: int, mean='soft_k_medoid',
                  mean_kwargs: Dict[str, Any] = dict(k=64, temperature=1.0, with_weight_correction=True),
                  ):
-        super().__init__(in_channels, out_channels)
-        self._mean = ROBUST_MEANS[mean]
+        super().__init__(in_channels, out_channels, aggr='max')
+        self._mean = soft_weighted_medoid_k_neighborhood
         #self._mean = soft_weighted_medoid_k_neighborhood
         self._mean_kwargs = mean_kwargs
+        #self.do_chunk = True
+        self.n_chunks = 8
 
     def message_and_aggregate(self, adj_t) -> torch.Tensor:
         return NotImplemented
     
-    def propagate(self, edge_index: torch.Tensor, size=None, **kwargs) -> torch.Tensor:
+    def propagate(self, edge_index: Union[torch.Tensor, SparseTensor], size=None, **kwargs) -> torch.Tensor:
         x = kwargs['x']
+        #if not isinstance(edge_index, SparseTensor):
+        #    edge_weights = kwargs['norm'] if 'norm' in kwargs else kwargs['edge_weight']
+        #    A = SparseTensor.from_edge_index(edge_index, edge_weights, (x.size(0), x.size(0)))
+        #    return self._mean(A, x, **self._mean_kwargs)
         edge_weights = kwargs['norm'] if 'norm' in kwargs else kwargs['edge_weight']
-        A = torch.sparse.FloatTensor(edge_index, edge_weights).coalesce()
-        return self._mean(A, x, **self._mean_kwargs)
+        edge_index = SparseTensor.from_edge_index(edge_index, edge_weights, (x.size(0), x.size(0)))
+
+        def aggregate(edge_index: SparseTensor, x: torch.Tensor):
+            return self._mean(edge_index, x, **self._mean_kwargs)
+        #if self.do_chunk:
+        #    return chunked_message_and_aggregate(edge_index, x, n_chunks=self.n_chunks, aggregation_function=aggregate)
+        #else:
+        #    return aggregate(edge_index, x)
+
+    
 
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
