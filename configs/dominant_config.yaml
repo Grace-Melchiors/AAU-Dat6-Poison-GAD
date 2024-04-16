@@ -1,6 +1,6 @@
 model:
   hidden_dim: 96
-  epochs: 120
+  epochs: 200
   lr: 0.005
   dropout: 0.3
   alpha: 0.7

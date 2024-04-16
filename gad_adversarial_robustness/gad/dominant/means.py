@@ -27,6 +27,8 @@ try:
     try:
         print("TEST")
         import kernels as custom_cuda_kernels
+        if True == True:
+            raise ImportError()
         if not hasattr(custom_cuda_kernels, 'topk'):
             print("raising import error")
             raise ImportError()
@@ -290,6 +292,7 @@ def soft_weighted_medoid_k_neighborhood(
             raise NotImplementedError('`k` less than `n` and `with_weight_correction` is not implemented.')
         return soft_weighted_medoid(A.to_torch_sparse_coo_tensor(), x, temperature=temperature)
     if not x.is_cuda and n < threshold_for_dense_if_cpu:
+        print("NOT CUDA")
         return dense_cpu_soft_weighted_medoid_k_neighborhood(A, x, k, temperature, with_weight_correction)
 
     A_rows, A_cols, A_values = A.coo()
