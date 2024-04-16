@@ -56,10 +56,10 @@ def multiclass_noisify(y, P, random_state=0):
     for idx in np.arange(m):
         i = y[idx]
 
-        print("y",y)
-        print("y[idx]",y[idx])
-        print("i",i)
-        print("P[i, :]",P[i, :])
+        # print("y",y)
+        # print("y[idx]",y[idx])
+        # print("i",i)
+        # print("P[i, :]",P[i, :])
 
         # draw a vector with only an 1
         flipped = flipper.multinomial(1, P[i, :], 1)[0] # n, pval, size : where pvals is sequence of floats, length p
