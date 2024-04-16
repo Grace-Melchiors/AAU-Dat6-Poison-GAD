@@ -84,7 +84,7 @@ class multiple_AS(nn.Module):
 
 def poison_attack(model, triple, B, print_stats = False):
     triple_copy = triple.copy()
-    # print(f'triple copy type: {type(triple_copy)}')
+    print(f'triple copy type: {type(triple_copy)}')
     triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
     AS = []
     perturb = []
@@ -173,7 +173,7 @@ from sklearn.metrics import (
 )
 
 class Greedy_Poison_Class(BasePoison):
-    def __init__(self, data, budget = 35, target_node_indexes= []):
+    def __init__(self, data, budget=0, target_node_indexes= []):
         super().__init__(data, budget, target_node_indexes)
 
     def poison_data(self, print_stats = False):
