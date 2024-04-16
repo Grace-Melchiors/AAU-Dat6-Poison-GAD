@@ -24,6 +24,8 @@ def get_subset_neighbors(subset, edge_index, unique_neighbors=False):
         num_nodes = maybe_num_nodes(edge_index) # gets amount of nodes present in edges
         node_mask = index_to_mask(subset, size=num_nodes) # creates node mask
 
+
+
     edge_mask = node_mask[edge_index[0]] # create edge mask to find nodes starting from origin
 
     edge_index = edge_index[:, edge_mask] # apply mask

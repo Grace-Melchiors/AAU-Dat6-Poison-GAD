@@ -66,6 +66,7 @@ class Dominant(nn.Module):
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
         self.attrs = attrs.to(self.device).requires_grad_(True)
         self.label = label
+        self.score = None
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.shared_encoder(x, edge_index)
@@ -92,8 +93,8 @@ class Dominant(nn.Module):
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.edge_index)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
-                score = loss.detach().cpu().numpy()
-                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label, score)}")
+                self.score = loss.detach().cpu().numpy()
+                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label, self.score)}")
 
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:

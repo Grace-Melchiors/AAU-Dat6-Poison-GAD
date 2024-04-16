@@ -6,6 +6,7 @@ from torch_geometric.utils import to_networkx
 from gad_adversarial_robustness.utils.experiment_results import Experiment
 from gad_adversarial_robustness.utils.subgraphs import get_subset_neighbors
 from typing import List
+from torch_geometric.utils.num_nodes import maybe_num_nodes
 
 
 def get_rest_of_node_idxs(subset_idxs, num_nodes):
@@ -26,14 +27,119 @@ def get_rest_of_node_idxs(subset_idxs, num_nodes):
     
     return rest_of_node_idxs
 
+def visualize_node_degree(edge_index_list, graph_names = None, cut_off = None):
+    """
+        Visualizes the cumulative distribution of node degrees for a subset for a list of edge_indexes
+        Parameters:
+        - edge_index_list: List of edge indexes of the graphs
+        - graph_names (list of str): The names of the graphs
+        - cut_off (int): Limiter for amount of neighbors to display. Default none.
 
-def visualize_neighbors_amount(edge_index, subset, num_nodes, normalize = False):
+        Returns:
+        No return value.
+        """
+    
+    fig = plt.figure(figsize=(9, 4), layout="constrained")
+    ax = fig.add_subplot(1, 1, 1)
+
+    # For each subset....
+    for i, edge_index in enumerate(edge_index_list):
+
+        # Get amount of neighbors for each node
+        num_nodes = maybe_num_nodes(edge_index)
+        node_idxs = torch.tensor(np.arange(num_nodes))
+        node_idxs_neighbors_amount = []
+
+        # Find degree for every node
+        for idx in node_idxs:
+            amount = get_subset_neighbors(idx, edge_index).size()[0]
+            node_idxs_neighbors_amount.append(amount)
+
+        # Name graph
+        graph_name = 'graph' + str(i)
+        if(graph_names is not None):
+            graph_name = graph_names[i]
+        ax.ecdf(node_idxs_neighbors_amount, label=graph_name)
+        
+   # Label figure
+    fig.suptitle("Cumulative distribution of node degrees")
+
+    ax.grid(True)
+    ax.legend()
+    ax.set_xlabel("Node degree")
+    ax.set_ylabel("Probability of occurrence")
+    ax.label_outer()
+
+    if(cut_off is not None):
+        ax.set_xbound(0, cut_off)
+            
+    plt.show()
+
+
+def visualize_2hop_node_degree(edge_index_list, graph_names = None, cut_off = None):
+    """
+        Visualizes the cumulative distribution of 2-hop node degrees for a subset for a list of edge_indexes
+        Parameters:
+        - edge_index_list: List of edge indexes of the graphs
+        - graph_names (list of str): The names of the graphs
+        - cut_off (int): Limiter for amount of neighbors to display. Default none.
+
+        Returns:
+        No return value.
+        """
+    
+    fig = plt.figure(figsize=(9, 4), layout="constrained")
+    ax = fig.add_subplot(1, 1, 1)
+
+    # For each subset....
+    for i, edge_index in enumerate(edge_index_list):
+
+        # Get amount of neighbors for each node
+        num_nodes = maybe_num_nodes(edge_index)
+        node_idxs = torch.tensor(np.arange(num_nodes))
+        node_idxs_neighbors_amount = []
+
+        # Find 2hop degree for each node
+        for idx in node_idxs:
+            neighbor_nodes_1hop = get_subset_neighbors(idx, edge_index)  #1 hop
+            neighbor_nodes_2hop = get_subset_neighbors(neighbor_nodes_1hop, edge_index)  #2 hop
+
+            neighbor_nodes = torch.cat((neighbor_nodes_1hop, neighbor_nodes_2hop))  # join 1 and 2
+            neighbor_nodes = torch.unique(neighbor_nodes)   # Remove duplicates 
+            
+            amount = neighbor_nodes.size()[0]   # Get amount
+            amount = amount - 1 # Subtract self
+            node_idxs_neighbors_amount.append(amount)
+
+        # Name graph
+        graph_name = 'graph' + str(i)
+        if(graph_names is not None):
+            graph_name = graph_names[i]
+        ax.ecdf(node_idxs_neighbors_amount, label=graph_name)
+        
+   # Label figure
+    fig.suptitle("Cumulative distribution of 2hop node degrees")
+
+    ax.grid(True)
+    ax.legend()
+    ax.set_xlabel("2hop Node degree")
+    ax.set_ylabel("Probability of occurrence")
+    ax.label_outer()
+
+    if(cut_off is not None):
+        ax.set_xbound(0, cut_off)
+            
+    plt.show()
+
+    
+def visualize_neighbors_amount(edge_index, subset, num_nodes, cut_off = None, normalize = False):
     """
         Visualizes the amount of neighbors for a subset vs the rest of nodes in stacked bar.
         Parameters:
         - edge_index: The edge index of the graph.
         - subset (tensor): The subset of node idxs to visualize.
         - num_nodes (int): The total number of nodes in the graph.
+        - cut_off (int): Limiter for amount of neighbors to display. Default none.
         - normalize (bool): Whether to normalize the amount of neighbors to percentages
 
         Returns:
@@ -55,7 +161,7 @@ def visualize_neighbors_amount(edge_index, subset, num_nodes, normalize = False)
         rest_of_node_idxs_neighbors_amount.append(amount)
     
     # Find amouunt of nodes at different intervals
-    max_amount = torch.max(torch.cat((subset_neighbors_amount, rest_of_node_idxs_neighbors_amount), dim=0)).item()
+    max_amount = max(subset_neighbors_amount + rest_of_node_idxs_neighbors_amount)
     interval_count = torch.zeros(2, max_amount+1)
     
     for amount in subset_neighbors_amount:
@@ -63,14 +169,25 @@ def visualize_neighbors_amount(edge_index, subset, num_nodes, normalize = False)
     for amount in rest_of_node_idxs_neighbors_amount:
         interval_count[1][amount] += 1
 
+
+    if(normalize):  # Normalize to percentages
+        interval_count[0] = interval_count[0] / subset.size()[0]
+        interval_count[1] = interval_count[1] / rest_of_node_idxs.size()[0]
+    
+    count = np.arange(max_amount+1) # Counts up till max
+
+    if(cut_off is not None):    # Cut down
+        interval_count = interval_count[:,0:cut_off]
+        count = count[0:cut_off]
+        max_amount = cut_off
+
     interval_count = interval_count.numpy()
-    count = np.arange(max_amount+1)
 
-    # Plot stacked bar
-    plt.bar(count, interval_count[0], color = 'red')    #Subset
-    plt.bar(count, interval_count[1], bottom = interval_count[0], color = 'blue')    #Rest
+    # # Plot stacked bar
+    plt.bar(count+0.4, interval_count[0], color = 'red', width=0.40)    #Subset
+    plt.bar(count, interval_count[1], color = 'blue', width=0.40)    #Rest
+
     plt.show()
-
 
 def count_positive_class(anomalies_list: List[int]):
     count = 0
