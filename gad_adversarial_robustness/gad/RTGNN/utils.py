@@ -51,15 +51,26 @@ def multiclass_noisify(y, P, random_state=0):
     new_y = y.copy()
     flipper = np.random.RandomState(random_state)
 
+    count = 0
+
     for idx in np.arange(m):
         i = y[idx]
+
+        print("y",y)
+        print("y[idx]",y[idx])
+        print("i",i)
+        print("P[i, :]",P[i, :])
+
         # draw a vector with only an 1
-        # flipped = flipper.multinomial(1, P[i, :], 1)[0] # n, pval, size : where pvals is sequence of floats, length p
-        # flipped = flipper.multinomial(1, P[i, :, np.newaxis], 1)[0]
-        # flipped = flipper.multinomial(1, P[i, :][np.newaxis, :], 1)[0]
-        flipped = flipper.multinomial(1, P[i, :].reshape(1, -1), 1)[0]
+        flipped = flipper.multinomial(1, P[i, :], 1)[0] # n, pval, size : where pvals is sequence of floats, length p
+
         new_y[idx] = np.where(flipped == 1)[0]
 
+        # for debugging: counts how many changes are made
+        if(new_y[idx] != y[idx]):
+            count += 1
+
+    print("count:", count)  
     return new_y
 
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
@@ -114,7 +125,7 @@ def noisify_with_P(y_train, train_num,  nb_classes, noise, random_state=None,  n
         else:
             print('Noise type have implemented')
         
-        print("probability matrix P:",P) # debugging, P is a 2d array of dim: 3x3 right now
+        print("probability matrix P:\n",P) # debugging, P is a 2d array of dim: 3x3 right now
         
         # seed the random numbers with #run
         y_train_noisy = multiclass_noisify(y_train, P=P,
