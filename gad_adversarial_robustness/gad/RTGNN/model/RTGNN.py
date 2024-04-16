@@ -89,7 +89,8 @@ class PseudoLoss(nn.Module):
         return loss
 
 class IntraviewReg(nn.Module):
-    def __init__(self,device='cuda'):
+    # def __init__(self,device='cuda'):
+    def __init__(self,device='cpu'):
         super(IntraviewReg, self).__init__()
         self.device = device
     def index_to_mask(self, index, size=None):
