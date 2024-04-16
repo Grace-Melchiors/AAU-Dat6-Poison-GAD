@@ -10,6 +10,9 @@ from gad_adversarial_robustness.gad.RTGNN.model.Dual_GCN import GCN, Dual_GCN
 # from utils import accuracy, sparse_mx_to_torch_sparse_tensor
 from gad_adversarial_robustness.gad.RTGNN.utils import accuracy, sparse_mx_to_torch_sparse_tensor
 
+from scipy.sparse import coo_matrix
+from torch_geometric.utils.convert import from_scipy_sparse_matrix
+
 def kl_loss_compute(pred, soft_targets, reduce=True, tempature=1):
     pred = pred / tempature
     soft_targets = soft_targets / tempature
@@ -155,9 +158,15 @@ class RTGNN(nn.Module):
         self.features_diff = torch.cdist(features, features, 2) #  calculates the pairwise Euclidean distances between the feature matricies
         args = self.args
 
-        # converrt adj matrix to edge_index representation (COO)
-        edge_index, _ = utils.from_scipy_sparse_matrix(adj) 
+        ## converrt adj matrix to edge_index representation (COO)
+        # edge_index, _ = utils.from_scipy_sparse_matrix(adj) 
+        # edge_index = edge_index.to(self.device)
+
+        np_adj = adj.detach().cpu().numpy()
+        sparse_adj = coo_matrix(np_adj)
+        edge_index = from_scipy_sparse_matrix(sparse_adj)[0]
         edge_index = edge_index.to(self.device)
+        print("edge_index: \n",edge_index.shape)
 
         # Converting Features to PyTorch Tensors
         if sp.issparse(features):
