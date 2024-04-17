@@ -66,6 +66,7 @@ class Dominant(nn.Module):
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
         self.attrs = attrs.to(self.device).requires_grad_(True)
         self.label = label
+        self.top_k_AS = None
         self.score = None
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -74,7 +75,7 @@ class Dominant(nn.Module):
         struct_reconstructed = self.struct_decoder(x, edge_index)
         return struct_reconstructed, x_hat
 
-    def fit(self, config: dict, verbose: bool = False):
+    def fit(self, config: dict, verbose: bool = False, top_k: int = 10):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['model']['lr'])
 
         for epoch in range(config['model']['epochs']):
@@ -94,7 +95,22 @@ class Dominant(nn.Module):
                 A_hat, X_hat = self.forward(self.attrs, self.edge_index)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
-                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label, self.score)}")
+                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+
+                # Identify and store the IDs of the nodes with the top K highest anomaly scores
+                if top_k is not None:
+                    # Convert the anomaly scores to a PyTorch tensor
+                    scores_tensor = torch.tensor(self.score)
+                    # Use torch.topk to find the top K scores and their indices
+                    topk_scores, topk_indices = torch.topk(scores_tensor, top_k, largest=True)
+                    # Convert the indices and scores to lists and store them
+                    top_k_AS_indices = topk_indices.tolist()
+                    top_k_AS_scores = topk_scores.tolist()
+                    self.top_k_AS = top_k_AS_indices
+                    # Print the node IDs and their corresponding anomaly scores
+                    print(f"Top {top_k} highest anomaly scores' node IDs and scores:")
+                    for idx, score in zip(top_k_AS_indices, top_k_AS_scores):
+                        print(f"Node ID: {idx}, Anomaly Score: {score}")
 
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:

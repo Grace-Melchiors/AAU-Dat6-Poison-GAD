@@ -38,8 +38,8 @@ class multiple_AS(nn.Module):
     def extract_NE(self, A):    # Extract node and edge information based on adjecency matrix
         N = torch.sum(A, 1)
         E = torch.sum(A, 1) + 0.5 * torch.diag(self.sparse_matrix_power(A, 3)).T
-        N = N.reshape(-1,1)
-        E = E.reshape(-1,)
+        N = N.reshape(-1,1).to(self.device)
+        E = E.reshape(-1,).to(self.device)
         return N, E
     
     def OLS_estimation(self, N, E):
@@ -53,8 +53,8 @@ class multiple_AS(nn.Module):
         Returns:
             tensor: Tensor result of the OLS estimation
         """
-        logN = torch.log(N + 1e-20)
-        logE = torch.log(E + 1e-20)
+        logN = torch.log(N + 1e-20).to(self.device)
+        logE = torch.log(E + 1e-20).to(self.device)
         logN1 = torch.cat((torch.ones((len(logN),1)).to(self.device), logN), 1)
         return torch.linalg.pinv(logN1) @ logE
         
@@ -75,6 +75,7 @@ class multiple_AS(nn.Module):
 
         A = self.adjacency_matrix(tri)
         N, E = self.extract_NE(A)
+
         theta = self.OLS_estimation(N, E)
         b = theta[0] # Intercept
         w = theta[1] # Coefficient
@@ -160,14 +161,16 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb):
     model.to(config['model']['device'])
     model.fit(config, verbose=False)
 
-    AS_DOM = np.sum(model.score)
-    AUC_DOM = roc_auc_score(model.label.numpy(), model.score)
+    
+    AS_DOM = np.sum(target_node_mask(target_list=target_list, tuple_list=model.score))
+    #AS_DOM = np.sum(model.score)
+    AUC_DOM = roc_auc_score(model.label.detach().cpu().numpy(), model.score)
     ACC_DOM = 0
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
 
     return AS_DOM, AUC_DOM, ACC_DOM
 
-def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_list, B, CPI = 1, print_stats = False):
+def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, config, target_list, B, CPI = 1, print_stats = False):
     """
         Parameters: 
         - model: The surrogate model
@@ -196,15 +199,23 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
     AUC_DOM = []
     ACC_DOM = []
     perturb = []
-    AS.append(model.true_AS(triple_torch).data.numpy()[0])
+    print("True AS")
+    print(model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
+    print(model.true_AS(triple_torch).data.detach().cpu().numpy())
+    print("After AS")
+    AS.append(model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
     AS_DOM_temp, AUC_DOM_temp, ACC_DOM_temp = get_DOMINANT_eval_values(DOMINANT_model, config, target_list, perturb)
     AS_DOM.append(AS_DOM_temp)
     AUC_DOM.append(AUC_DOM_temp)
     ACC_DOM.append(ACC_DOM_temp)
-    if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.numpy()[0])
+    if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
     
     i = 0
+    count = 0
     while i < B:   #While we have not reached the maximum number of perturbations
+        count += 1
+        print("Perturbation number:", count)
+        
         loss = model.forward(triple_torch)
         loss.backward()
         
@@ -263,14 +274,14 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
             perturb.append([int(target_grad[0]),int(target_grad[1]), int(0 < target_grad[2])]) 
 
             # Get and save updated scores and values
-            true_AScore = model.true_AS(triple_torch).data.numpy()[0] 
+            true_AScore = model.true_AS(triple_torch).data.detach().cpu().numpy()[0] 
             AS.append(true_AScore)
             AS_DOM_temp, AUC_DOM_temp, ACC_DOM_temp = get_DOMINANT_eval_values(DOMINANT_model, config, target_list, perturb)
             AS_DOM.append(AS_DOM_temp)
             AUC_DOM.append(AUC_DOM_temp)
             ACC_DOM.append(ACC_DOM_temp)
-            if(print_stats): print('iter', i, 'anomaly score:', true_AScore, 'DOM anomaly score:', AS_DOM_temp, 
-                                   'DOM AUC:', AUC_DOM_temp, 'TARGET DOM ACC:', ACC_DOM_temp)
+            if(print_stats): print('Iteration:', i, '--- Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp, 
+                                   '--- DOM AUC:', AUC_DOM_temp, '--- TARGET DOM ACC:', ACC_DOM_temp)
 
     AS = np.array(AS)    
 
@@ -343,7 +354,7 @@ def poison_attack(model, triple, B, print_stats = False):
         # Get and save updated anomaly score
         true_AScore = model.true_AS(triple_torch).data.numpy()[0] 
         AS.append(true_AScore)
-        if(print_stats): print('iter', i, 'anomaly score:', true_AScore)
+        if(print_stats): print('Iteration:', i, '--- Anomaly score:', true_AScore)
 
     AS = np.array(AS)    
 

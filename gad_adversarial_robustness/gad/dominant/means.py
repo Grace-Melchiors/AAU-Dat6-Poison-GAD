@@ -25,10 +25,7 @@ print(os.environ.get('CUDA_PATH'))
 
 try:
     try:
-        print("TEST")
         import kernels as custom_cuda_kernels
-        if True == True:
-            raise ImportError()
         if not hasattr(custom_cuda_kernels, 'topk'):
             print("raising import error")
             raise ImportError()
