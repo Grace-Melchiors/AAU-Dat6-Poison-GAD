@@ -204,7 +204,7 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
     if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.numpy()[0])
     
     i = 0
-    while i <= B:   #While we have not reached the maximum number of perturbations
+    while i < B:   #While we have not reached the maximum number of perturbations
         loss = model.forward(triple_torch)
         loss.backward()
         
@@ -235,8 +235,7 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
 
         # repeat for CPI amount of times, or till we reach the maximum number of perturbations
         j = 0
-        while j < CPI and i <= B:
-            print("Flag 1")
+        while j < CPI and i < B:
             j += 1
             i += 1
     
@@ -263,8 +262,6 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
             # Add perturb to list of perturbs
             perturb.append([int(target_grad[0]),int(target_grad[1]), int(0 < target_grad[2])]) 
 
-            print("Flag 2")
-
             # Get and save updated scores and values
             true_AScore = model.true_AS(triple_torch).data.numpy()[0] 
             AS.append(true_AScore)
@@ -277,7 +274,7 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
 
     AS = np.array(AS)    
 
-    edge_index = update_edge_data_with_perturb(DOMINANT_model.edge_index, perturb)
+    edge_index = update_adj_matrix_with_perturb(DOMINANT_model.edge_index, perturb)
 
     return triple_torch, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index
 

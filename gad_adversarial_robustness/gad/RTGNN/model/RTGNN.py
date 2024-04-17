@@ -223,33 +223,33 @@ class RTGNN(nn.Module):
     def train(self, epoch, features, edge_index, idx_train, idx_val, noise_idx, clean_idx):
         args = self.args
         self.predictor.train()
-        self.optimizer.zero_grad()
-        representations, rec_loss = self.estimator(edge_index, features)
+        self.optimizer.zero_grad() # zero the gradients
+        representations, rec_loss = self.estimator(edge_index, features) # compute the node representation using estimator (given edge_index and features)
         pred_edge_index = torch.cat([edge_index, self.pred_edge_index], dim=1)
         origin_w = torch.cat([torch.ones(edge_index.shape[1]), torch.zeros(self.pred_edge_index.shape[1])]).to(
             self.device)
 
-        predictor_weights,_ = self.estimator.get_estimated_weigths(pred_edge_index, representations, origin_w)
+        predictor_weights,_ = self.estimator.get_estimated_weigths(pred_edge_index, representations, origin_w) # computes estimated weights for edges?
         edge_remain_idx = torch.where(predictor_weights!=0)[0].detach()
         predictor_weights = predictor_weights[edge_remain_idx]
         pred_edge_index = pred_edge_index[:,edge_remain_idx]
 
-        log_pred, log_pred_1 = self.predictor(features, pred_edge_index, predictor_weights)
-        acc_pred_train0 = accuracy(log_pred[idx_train], self.labels[idx_train])
+        log_pred, log_pred_1 = self.predictor(features, pred_edge_index, predictor_weights) # computes log probabilities for both edges...
+        acc_pred_train0 = accuracy(log_pred[idx_train], self.labels[idx_train]) # compute accuracy for predictions on training set
         acc_pred_train1 = accuracy(log_pred_1[idx_train], self.labels[idx_train])
         
         print("=====Train Accuray=====")
         print("Epoch %d: #1 = %f, #2= %f"%(epoch,acc_pred_train0.item(),acc_pred_train1.item()))
 
-
+        # Activation Function: Softmax
         pred = F.softmax(log_pred, dim=1).detach()
         pred1 = F.softmax(log_pred_1, dim=1).detach()
 
-        self.idx_add= self.get_pseudo_label(pred, pred1)
-        if epoch==0:
+        self.idx_add= self.get_pseudo_label(pred, pred1) # get the pseudo labels from the model (True or False boolean val)
+        if epoch==0: # Compute the loss for both types of edges and the reconstruction loss
             loss_pred = F.cross_entropy(log_pred[idx_train],self.labels[idx_train])+F.cross_entropy(log_pred_1[idx_train],self.labels[idx_train])
         else:
-            loss_pred = self.criterion(log_pred[idx_train], log_pred_1[idx_train], self.labels[idx_train],
+            loss_pred = self.criterion(log_pred[idx_train], log_pred_1[idx_train], self.labels[idx_train], # If it's not the first epoch, compute the additional loss based on the pseudo labels
                                                     co_lambda=self.args.co_lambda, epoch=epoch)
 
         if len(self.idx_add) != 0:
@@ -257,12 +257,14 @@ class RTGNN(nn.Module):
         else:
             loss_add = torch.Tensor([0]).to(self.device)
 
-        neighbor_kl_loss = self.intra_reg(log_pred,log_pred_1,self.idx_train, pred_edge_index,predictor_weights)
-        total_loss = loss_pred + self.args.alpha * rec_loss + loss_add + self.args.co_lambda*(neighbor_kl_loss)
-        total_loss.backward()
+        neighbor_kl_loss = self.intra_reg(log_pred,log_pred_1,self.idx_train, pred_edge_index,predictor_weights) # Compute the neighbor KL loss
+        total_loss = loss_pred + self.args.alpha * rec_loss + loss_add + self.args.co_lambda*(neighbor_kl_loss) # compute total loss
+        total_loss = total_loss.clone()
+        # total_loss.backward() 
+        # total_loss = total_loss.backward() # backpropagation + update the model parameters
         self.optimizer.step()
 
-        self.predictor.eval()
+        self.predictor.eval() # evaluate model on the validation set
         output0, output1 = self.predictor(features, pred_edge_index, predictor_weights)
         acc_pred_val0 = accuracy(output0[idx_val], self.labels[idx_val])
         acc_pred_val1 = accuracy(output1[idx_val], self.labels[idx_val])
@@ -361,7 +363,10 @@ class EstimateAdj(nn.Module):
         x0 = representations[edge_index[0]]
         x1 = representations[edge_index[1]]
         output = torch.sum(torch.mul(x0, x1), dim=1)
-        estimated_weights = F.relu(output)
+        
+        # estimated_weights = F.relu(output)
+        estimated_weights = torch.nn.ReLU()(output) # changes bc: Pytorch does not allow the ReLU function to be modified "in-place" during the backward pass when computing gradients
+
         if estimated_weights.shape[0] != 0:
             estimated_weights[estimated_weights < self.args.tau] = 0
             if origin_w != None:
