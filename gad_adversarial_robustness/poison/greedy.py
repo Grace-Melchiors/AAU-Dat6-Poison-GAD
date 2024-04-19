@@ -47,8 +47,8 @@ class multiple_AS(nn.Module):
         OLS estimation function that calculates the Ordinary Least Squares estimate.
         
         Parameters:
-            N (tensor): Input tensor for independent variable N
-            E (tensor): Input tensor for dependent variable E
+            N (tensor): Input tensor for independent variable N (node)
+            E (tensor): Input tensor for dependent variable E (edge)
         
         Returns:
             tensor: Tensor result of the OLS estimation
@@ -289,7 +289,7 @@ def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, co
 
     return triple_torch, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index
 
-def poison_attack(model, triple, B, print_stats = False):
+def poison_attack(model, triple, B, print_stats = True):
     triple_copy = triple.copy()
     # print(f'triple copy type: {type(triple_copy)}')
     triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
@@ -346,7 +346,7 @@ def poison_attack(model, triple, B, print_stats = False):
 
         # Update representation of adjacency matrix (triple_torch)
         triple_copy[target_index,2] -= np.sign(target_grad[2])
-        #triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True)
+        triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True)
 
         # Add perturb to list of perturbs
         perturb.append([int(target_grad[0]),int(target_grad[1])])
