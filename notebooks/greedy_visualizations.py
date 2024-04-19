@@ -1,6 +1,5 @@
 # %% 
 from gad_adversarial_robustness.poison.greedy import greedy_attack_with_statistics
-import argparse
 import os
 import torch
 import torch.nn as nn
@@ -8,9 +7,7 @@ import numpy as np
 from torch.autograd import Variable
 from torch.optim.sgd import SGD
 from torch.optim.optimizer import required
-from torch.optim import Optimizer
 import torch
-import sklearn
 import numpy as np
 import scipy.sparse as sp
 from pygod.detector import DOMINANT
@@ -26,25 +23,26 @@ from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_
 from torch_geometric.data import Data
 from torch_geometric.utils import to_torch_sparse_tensor
 from gad_adversarial_robustness.poison.greedy import multiple_AS
+from gad_adversarial_robustness.utils.graph_utils import get_n_anomaly_indexes
 from sklearn.metrics import (
     roc_auc_score,
     average_precision_score,
     f1_score
 )
 
-USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = True
+USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 TOP_K = 20
 
 data = load_data("inj_cora")
 y_binary: List[int] = data.y.bool()
 print(y_binary)
 
-anomaly_list = np.where(y_binary == True)[0]  # Used for list for which nodes to hide
+anomaly_list = get_n_anomaly_indexes(y_binary, TOP_K)
+#anomaly_list = np.where(y_binary == True)[0]  # Used for list for which nodes to hide
+
 print(anomaly_list)
 
-
 _, adj, _ = prepare_graph(data)
-
 
 amount_of_nodes = data.num_nodes
 
@@ -109,7 +107,7 @@ model = multiple_AS(target_lst = target_list, n_node = amount_of_nodes, device =
 
 budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = 10
+budget = 30
 
 print("Starting attack...")
 """
@@ -122,17 +120,19 @@ _, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index = greedy_attack_with_statis
 # -------------
 """
 
-from gad_adversarial_robustness.gad.dominant.dominant_aggr import Dominant as Dominant2
 dom_model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                 device=config['model']['device'], edge_index=sparse_adj, adj_label=adj_label, attrs=attrs, label=label)
 
-_, AS2, AS_DOM2, AUC_DOM2, ACC_DOM2, perturb, edge_index = greedy_attack_with_statistics(
+_, AS2, AS_DOM2, AUC_DOM2, ACC_DOM2, perturb, edge_index, CHANGE_IN_TARGET_NODE_AS = greedy_attack_with_statistics(
     model, triple, dom_model, config, target_list, budget, print_stats = True)
+
 # -------------
 
 
 # %%
 import matplotlib.pyplot as plt
+
+
 
 def plot_scores(scores, title='AUC Scores by Budget', xlabel='Budget', ylabel='AUC Score'):
     """
@@ -144,7 +144,7 @@ def plot_scores(scores, title='AUC Scores by Budget', xlabel='Budget', ylabel='A
     - xlabel: Label for the X-axis.
     - ylabel: Label for the Y-axis.
     """
-    budgets = range(1, len(scores) + 1)
+    budgets = range(0, len(scores))
 
     # Creating the plot
     plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
@@ -163,9 +163,9 @@ def plot_scores(scores, title='AUC Scores by Budget', xlabel='Budget', ylabel='A
     plt.show()
 
 
-plot_scores(AUC_DOM, "DOMINANT AUC-Score by Budget")
-plot_scores(AS_DOM, "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
-print(AS_DOM)
+plot_scores(AUC_DOM2, "DOMINANT AUC-Score by Budget")
+plot_scores(AS_DOM2, "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
+print(AS_DOM2)
 
 
 # %%
@@ -182,5 +182,35 @@ def print_values_not_in_bigger_array(small_array, bigger_array):
 target_list = np.array(testingModel.top_k_AS)
 print_values_not_in_bigger_array(target_list, anomaly_list)
 
+
+# %%
+def plot_anomaly_scores(anomaly_scores):
+    iterations = range(1, len(anomaly_scores[0]))
+
+    for node_index, scores in enumerate(anomaly_scores, start=1):
+        plt.plot(iterations, scores, label=f'Node {node_index}')
+
+    plt.xlabel('Budget')
+    plt.ylabel('Anomaly Score')
+    plt.title('Anomaly Score Development for Each Node')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def plot_anomaly_scores(anomaly_scores):
+    iterations = range(len(anomaly_scores))  # Number of iterations
+
+    for node_index in range(len(anomaly_scores[0])):
+        node_scores = [scores[node_index] for scores in anomaly_scores]
+        plt.plot(iterations, node_scores)
+
+    plt.xlabel('Budget')
+    plt.ylabel('Anomaly Score')
+    plt.title('Anomaly Score Development for Each Node')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS)
 
 # %%

@@ -7,16 +7,55 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
 from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv, TAGConv
 from sklearn.metrics import roc_auc_score
 from typing import Tuple
 from pygod.utils import load_data
+from torch.nn.modules import Module
+from torch.nn import Parameter
+import math
+
+
+class GraphConvolution(Module):
+    """
+    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
+    """
+
+    def __init__(self, in_features, out_features, bias=True):
+        super(GraphConvolution, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
+    
+        if bias:
+            self.bias = Parameter(torch.FloatTensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.uniform_(-stdv, stdv)
+
+    def forward(self, input, adj):
+        previous_attr = input
+
+        # Product of multiplying feature matrix with the weights (random in first iteration)
+        support = torch.mm(input, self.weight)
+        # Multiplying feature*weights with adjacency matrix
+        output = torch.spmm(adj, support)
+
+        if self.bias is not None:
+            return output + self.bias
+        else:
+            return output
 
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(Encoder, self).__init__()
-        self.gc1 = GCNConv(nfeat, nhid)
-        self.gc2 = GCNConv(nhid, nhid)
+        self.gc1 = GraphConvolution(nfeat, nhid)
+        self.gc2 = GraphConvolution(nhid, nhid)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
@@ -29,8 +68,8 @@ class Encoder(nn.Module):
 class AttributeDecoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(AttributeDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
-        self.gc2 = GCNConv(nhid, nfeat)
+        self.gc1 = GraphConvolution(nhid, nhid)
+        self.gc2 = GraphConvolution(nhid, nfeat)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
@@ -43,7 +82,7 @@ class AttributeDecoder(nn.Module):
 class StructureDecoder(nn.Module):
     def __init__(self, nhid: int, dropout: float):
         super(StructureDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
+        self.gc1 = GraphConvolution(nhid, nhid)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
@@ -66,6 +105,7 @@ class Dominant(nn.Module):
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
         self.attrs = attrs.to(self.device).requires_grad_(True)
         self.label = label
+        self.top_k_AS = None
         self.score = None
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -74,7 +114,7 @@ class Dominant(nn.Module):
         struct_reconstructed = self.struct_decoder(x, edge_index)
         return struct_reconstructed, x_hat
 
-    def fit(self, config: dict, verbose: bool = False):
+    def fit(self, config: dict, verbose: bool = False, top_k: int = 10):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['model']['lr'])
 
         for epoch in range(config['model']['epochs']):
@@ -93,10 +133,25 @@ class Dominant(nn.Module):
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.edge_index)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
-                score = loss.detach().cpu().numpy()
-                self.score = score
-                label = self.label.detach().cpu().numpy()
-                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(label, score)}")
+                self.score = loss.detach().cpu().numpy()
+                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+
+                # Identify and store the IDs of the nodes with the top K highest anomaly scores
+                if top_k is not None:
+                    # Convert the anomaly scores to a PyTorch tensor
+                    scores_tensor = torch.tensor(self.score)
+                    # Use torch.topk to find the top K scores and their indices
+                    topk_scores, topk_indices = torch.topk(scores_tensor, top_k, largest=True)
+                    # Convert the indices and scores to lists and store them
+                    top_k_AS_indices = topk_indices.tolist()
+                    top_k_AS_scores = topk_scores.tolist()
+                    self.top_k_AS = top_k_AS_indices
+                    # Print the node IDs and their corresponding anomaly scores
+                    print(f"Top {top_k} highest anomaly scores' node IDs and scores:")
+                    #for idx, score in zip(top_k_AS_indices, top_k_AS_scores):
+                    #    print(f"Node ID: {idx}, Anomaly Score: {score}")
+
+
 
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
@@ -147,7 +202,8 @@ if __name__ == '__main__':
     adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
     #attrs = torch.FloatTensor(attrs)
 
-    edge_index = dataset.edge_index.to(config['model']['device'])
+    from torch_geometric.utils import to_torch_sparse_tensor
+    edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
 
