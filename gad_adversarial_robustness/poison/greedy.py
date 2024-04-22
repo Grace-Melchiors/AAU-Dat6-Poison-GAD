@@ -1,5 +1,7 @@
 # From https://github.com/zhuyulin-tony/BinarizedAttack/blob/main/src/Greedy.py
 
+from torch_geometric.utils import to_edge_index, dense_to_sparse, to_dense_adj
+
 import argparse
 import os
 import torch
@@ -7,11 +9,14 @@ import torch.nn as nn
 import numpy as np
 from torch.autograd import Variable
 #from torch_sparse import SparseTensor
+from scipy.sparse import csr_matrix
+
 
 from gad_adversarial_robustness.poison.base_classes import BasePoison
 
 from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant 
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
+from torch_geometric.utils.convert import from_scipy_sparse_matrix
 
 class multiple_AS(nn.Module):
     def __init__(self, target_lst, n_node, device):
@@ -97,13 +102,23 @@ def update_adj_matrix_with_perturb(adj_matrix, perturb):
         Returns:
         - adj_matrix: The updated adjacency matrix in sparse
     """
-    adj_matrix = adj_matrix.to_dense()
+    adj_matrix = to_dense_adj(adj_matrix)
+    #adj_matrix = adj_matrix.to_dense()
+    if adj_matrix.ndim == 3:
+        adj_matrix = adj_matrix[0]
+    
+    print("DENSE SHAPE:")
+    print(adj_matrix[0].shape)
 
     for change in perturb:
+        print(f'Change: {change}')
         adj_matrix[change[0], change[1]] = change[2]
         adj_matrix[change[1], change[0]] = change[2]
     
-    adj_matrix = adj_matrix.to_sparse()
+
+    print(adj_matrix.shape)
+    adj_matrix = dense_to_sparse(adj_matrix)[0]
+    print(adj_matrix.shape)
     return adj_matrix
 
 

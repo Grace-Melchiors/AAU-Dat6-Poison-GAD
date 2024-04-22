@@ -5,12 +5,13 @@ import scipy.sparse as sp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.utils import to_dense_adj
+from torch_geometric.utils import to_dense_adj, to_torch_sparse_tensor
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv
 from sklearn.metrics import roc_auc_score
 from typing import Tuple
 from pygod.utils import load_data
+
 
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
@@ -20,6 +21,7 @@ class Encoder(nn.Module):
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        print(x.is_cuda, edge_index.is_cuda)
         x = F.relu(self.gc1(x, edge_index))
         x = F.dropout(x, self.dropout, training=self.training)
         x = F.relu(self.gc2(x, edge_index))
@@ -65,12 +67,14 @@ class Dominant(nn.Module):
         self.edge_index = edge_index.to(self.device)
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
         self.attrs = attrs.to(self.device).requires_grad_(True)
-        self.label = label
+        self.label = label.to(self.device)
         self.top_k_AS = None
         self.score = None
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        print(x.is_cuda, edge_index.is_cuda)
         x = self.shared_encoder(x, edge_index)
+        print(x.is_cuda)
         x_hat = self.attr_decoder(x, edge_index)
         struct_reconstructed = self.struct_decoder(x, edge_index)
         return struct_reconstructed, x_hat
@@ -155,11 +159,14 @@ if __name__ == '__main__':
     with open(yaml_path) as file:
         config = yaml.safe_load(file)
 
-    dataset = load_data("inj_cora")
-    adj, attrs, label, adj_label = load_anomaly_detection_dataset(dataset)
-    edge_index = torch.LongTensor(np.array(sp.coo_matrix(adj).nonzero()))
-    adj_label = torch.FloatTensor(adj_label)
-    attrs = torch.FloatTensor(attrs)
+    dataset: Data = load_data("inj_cora")
+    adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
+    adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
+    edge_index = dataset.edge_index.to(config['model']['device'])
+    label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
+    attrs = dataset.x.to(config['model']['device'])
+    #sparse_adj = to_torch_sparse_tensor(edge_index).to(config['model']['device'])
+
 
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                      device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
