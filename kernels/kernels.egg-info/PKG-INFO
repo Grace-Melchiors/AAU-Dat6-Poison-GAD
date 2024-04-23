@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: kernels
+Version: 1.0.0
+Summary: Custom kernels for sparse topk and median
+Author: Simon Geisler
+Author-email: geisler@in.tum.de
+License: MIT
+Requires-Python: >=3.6

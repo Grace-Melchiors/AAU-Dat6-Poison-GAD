@@ -1,4 +1,5 @@
 import os
+from torch_sparse import SparseTensor
 import yaml
 import numpy as np
 import scipy.sparse as sp
@@ -14,12 +15,38 @@ from torch.nn.modules import Module
 from torch.nn import Parameter
 import math
 from torch_geometric.nn import GCNConv
+from torch.autograd import Variable
+import random
+from torch.nn import init
+from gad_adversarial_robustness.gad.dominant.means import dense_cpu_soft_weighted_medoid_k_neighborhood
+from typing import Dict, Any
+
+
+class CustomGCNConv(GCNConv):
+    def __init__(self, in_channels, out_channels, mean_kwargs: Dict[str, Any] = dict(k=64, temperature=1.0, with_weight_correction=True),  *args, **kwargs):
+        self._mean_kwargs = mean_kwargs
+        super(CustomGCNConv, self).__init__(in_channels=in_channels, out_channels=out_channels, *args, **kwargs, cached=False)
+
+    def propagate(self, edge_index, size=None, **kwargs: Any) -> torch.Tensor:
+        node_feats = kwargs['x']
+        edge_weights = torch.ones((edge_index.size(1), ), dtype=torch.float).to('cuda')
+        A = torch.sparse_coo_tensor(edge_index, edge_weights, (node_feats.size(0), node_feats.size(0))).coalesce()
+        #A = torch.sparse.FloatTensor(edge_index, edge_weights).coalesce()
+        
+        return dense_cpu_soft_weighted_medoid_k_neighborhood(A, node_feats, **self._mean_kwargs)
+
+    
+    def aggregate(self, node_feats, edge_index, **kwargs):
+        edge_weights = kwargs['norm'] if 'norm' in kwargs else kwargs['edge_weight']
+        A = torch.sparse.FloatTensor(edge_index, edge_weights).coalesce()
+        return dense_cpu_soft_weighted_medoid_k_neighborhood(A, node_feats, **self._mean_kwargs)
+
 
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(Encoder, self).__init__()
-        self.gc1 = GCNConv(nfeat, nhid)
-        self.gc2 = GCNConv(nhid, nhid)
+        self.gc1 = CustomGCNConv(in_channels=nfeat, out_channels=nhid)
+        self.gc2 = CustomGCNConv(nhid, nhid)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
@@ -167,7 +194,8 @@ if __name__ == '__main__':
     #attrs = torch.FloatTensor(attrs)
 
     from torch_geometric.utils import to_torch_sparse_tensor
-    edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
+    edge_index = dataset.edge_index.to(config['model']['device'])
+    #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
 
