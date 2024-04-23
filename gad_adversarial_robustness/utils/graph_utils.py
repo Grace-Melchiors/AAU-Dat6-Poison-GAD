@@ -157,3 +157,25 @@ def get_n_anomaly_indexes(truth, n_anomalies):
 
     print(f'Anomalies indexes: {indexes}')
     return indexes
+
+
+def top_anomalous_nodes(anomaly_scores, labels, K, print_scores = False):
+    # Get indices of nodes with label = 1
+    anomaly_indices = np.where(labels == 1)[0]
+
+    # Sort anomaly scores in descending order and get the corresponding indices
+    sorted_indices = np.argsort(anomaly_scores)[::-1]
+
+    # Filter the sorted indices to keep only those with label = 1
+    filtered_indices = np.intersect1d(sorted_indices, anomaly_indices)
+
+    # Get the top K indices
+    top_K_indices = filtered_indices[:K]
+
+    if print_scores:
+        # Print anomaly scores for the top K indices
+        print("Anomaly scores for top K indices with label = 1:")
+        for idx in top_K_indices:
+            print("Index:", idx, "| Anomaly Score:", anomaly_scores[idx])
+
+    return top_K_indices

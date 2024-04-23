@@ -97,8 +97,8 @@ class OddBall_AS(nn.Module):
         return torch.sparse.mm(torch.sparse.mm(A_sp, A_sp), A_sp).to_dense()
     
     def extract_NE(self, A):    # Extract node and edge information based on adjecency matrix
-        N = torch.sum(A, 1)
-        E = torch.sum(A, 1) + 0.5 * torch.diag(self.sparse_matrix_power(A, 3)).T
+        N = torch.sum(A, 1).to(self.device)
+        E = torch.sum(A, 1).to(self.device) + 0.5 * torch.diag(self.sparse_matrix_power(A, 3)).T.to(self.device)
         N = N.reshape(-1,1)
         E = E.reshape(-1,)
         return N, E
@@ -114,8 +114,8 @@ class OddBall_AS(nn.Module):
         Returns:
             tensor: Tensor result of the OLS estimation
         """
-        logN = torch.log(N + 1e-20)
-        logE = torch.log(E + 1e-20)
+        logN = torch.log(N + 1e-20).to(self.device)
+        logE = torch.log(E + 1e-20).to(self.device)
         logN1 = torch.cat((torch.ones((len(logN),1)).to(self.device), logN), 1)
         return torch.linalg.pinv(logN1) @ logE
         
@@ -145,14 +145,14 @@ class OddBall_AS(nn.Module):
 
         for i in range(self.n):
 
-            tmp = (torch.max(E[i],torch.exp(b)*(N[i]**w))\
-                   /torch.min(E[i],torch.exp(b)*(N[i]**w)))*\
-                    torch.log(torch.abs(E[i]-torch.exp(b)*(N[i]**w))+1)
+            tmp = (torch.max(E[i],torch.exp(b)*(N[i]**w)).to(self.device)\
+                   /torch.min(E[i],torch.exp(b)*(N[i]**w)).to(self.device))*\
+                    torch.log(torch.abs(E[i]-torch.exp(b)*(N[i]**w))+1).to(self.device)
             AS_list.append(tmp.item())
         return AS_list 
 
 
-def get_OddBall_AS(data, device):
+def get_OddBall_AS(data, device, OddBall_AS = OddBall_AS):
     _, adj, _ = prepare_graph(data) #Get adjacency matrix
 
     amount_of_nodes = data.num_nodes
@@ -169,7 +169,7 @@ def get_OddBall_AS(data, device):
 
     triple = np.array(triple)
 
-    model = OddBall_AS(target_lst = None, n_node = amount_of_nodes, device = device)
+    model = OddBall_AS(n_node = amount_of_nodes, device = device)
 
     OddBall_AS = model.true_AS(triple)
 
