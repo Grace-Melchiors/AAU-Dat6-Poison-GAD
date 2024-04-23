@@ -133,9 +133,9 @@ def update_edge_data_with_perturb(edge_data, perturb):
 
 def target_node_mask(target_list, tuple_list):
     """
-        Takes a targetlist, and a tensor list. Returns a numpy array
+        Takes a targetlist, and a list to pick items from. Returned as numpy array
     """
-    new_list = []
+    new_list = np.array([])
     for index in target_list:
         new_list.append(tuple_list[index])
     
@@ -160,19 +160,19 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb):
     model.to(config['model']['device'])
     model.fit(config, verbose=False)
 
-    AS_DOM = np.sum(model.score)
+    AS_DOM = np.sum(target_node_mask(target_list, model.score))
     AUC_DOM = roc_auc_score(model.label.numpy(), model.score)
     ACC_DOM = 0
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
 
     return AS_DOM, AUC_DOM, ACC_DOM
 
-def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_list, B, CPI = 1, print_stats = False):
+def greedy_attack_with_statistics(model, triple, list_of_DOMINANT_models, config, target_list, B, CPI = 1, print_stats = False):
     """
         Parameters: 
         - model: The surrogate model
         - triple: The edge_data to be posioned in triple form
-        - DOMINANT_model: The DOMINANT model
+        - list_of_DOMINANT_models: List of DOMINANT models to record stats for
         - config: The config of the DOMINANT model
         - target_list: List of target nodes
         - B: The number of perturbations
@@ -182,8 +182,8 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
         Returbs:
         - triple: The poisoned edge_data
         - AS: List of the anomaly score after each perturbation according to surrogate model
-        - AS_DOM: List of anomaly score after each perturbation according to DOMINANT
-        - AUC_DOM: AUC value after each perturbation according to DOMINANT
+        - AS_DOM: List of anomaly score after each perturbation according to DOMINANT models
+        - AUC_DOM: AUC value after each perturbation according to DOMINANT models
         - ACC_DOM: Accuracy of the predicting the target nodes
         - perturb: List of the changed edges
         - edge_index: The edge_index of the poisoned graph, converted to torch format
@@ -192,15 +192,21 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
     # print(f'triple copy type: {type(triple_copy)}')
     triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
     AS = []
-    AS_DOM = []
-    AUC_DOM = []
-    ACC_DOM = []
+    list_of_AS_DOM = []
+    list_of_AUC_DOM = []
+    list_of_ACC_DOM = []
+    for i in range(len(list_of_DOMINANT_models)):
+        list_of_AS_DOM.append([])
+        list_of_AUC_DOM.append([])
+        list_of_ACC_DOM.append([])
+
     perturb = []
     AS.append(model.true_AS(triple_torch).data.numpy()[0])
-    AS_DOM_temp, AUC_DOM_temp, ACC_DOM_temp = get_DOMINANT_eval_values(DOMINANT_model, config, target_list, perturb)
-    AS_DOM.append(AS_DOM_temp)
-    AUC_DOM.append(AUC_DOM_temp)
-    ACC_DOM.append(ACC_DOM_temp)
+    for i in range(len(list_of_DOMINANT_models)):
+        AS_DOM_temp, AUC_DOM_temp, ACC_DOM_temp = get_DOMINANT_eval_values(list_of_DOMINANT_models[i], config, target_list, perturb)
+        list_of_AS_DOM[i].append(AS_DOM_temp)
+        list_of_AUC_DOM[i].append(AUC_DOM_temp)
+        list_of_ACC_DOM[i].append(ACC_DOM_temp)
     if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.numpy()[0])
     
     i = 0
@@ -265,18 +271,22 @@ def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_
             # Get and save updated scores and values
             true_AScore = model.true_AS(triple_torch).data.numpy()[0] 
             AS.append(true_AScore)
-            AS_DOM_temp, AUC_DOM_temp, ACC_DOM_temp = get_DOMINANT_eval_values(DOMINANT_model, config, target_list, perturb)
-            AS_DOM.append(AS_DOM_temp)
-            AUC_DOM.append(AUC_DOM_temp)
-            ACC_DOM.append(ACC_DOM_temp)
-            if(print_stats): print('iter', i, 'anomaly score:', true_AScore, 'DOM anomaly score:', AS_DOM_temp, 
+            if(print_stats): print('iter', i, 'anomaly score:', true_AScore, 'perturb:', perturb[-1])
+
+            for model_count in range(len(list_of_DOMINANT_models)):
+                AS_DOM_temp, AUC_DOM_temp, ACC_DOM_temp = get_DOMINANT_eval_values(list_of_DOMINANT_models[model_count], config, target_list, perturb)
+                list_of_AS_DOM[model_count].append(AS_DOM_temp)
+                list_of_AUC_DOM[model_count].append(AUC_DOM_temp)
+                list_of_ACC_DOM[model_count].append(ACC_DOM_temp)
+
+                if(print_stats): print('model_num:', model_count, 'DOM anomaly score:', AS_DOM_temp, 
                                    'DOM AUC:', AUC_DOM_temp, 'TARGET DOM ACC:', ACC_DOM_temp)
 
     AS = np.array(AS)    
 
-    edge_index = update_adj_matrix_with_perturb(DOMINANT_model.edge_index, perturb)
+    edge_index = update_adj_matrix_with_perturb(list_of_DOMINANT_models[0].edge_index, perturb) #Just get the edge index of one of the DOMINANT models, doesn't matter which
 
-    return triple_torch, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index
+    return triple_torch, AS, list_of_AS_DOM, list_of_AUC_DOM, list_of_ACC_DOM, perturb, edge_index
 
 def poison_attack(model, triple, B, print_stats = False):
     triple_copy = triple.copy()

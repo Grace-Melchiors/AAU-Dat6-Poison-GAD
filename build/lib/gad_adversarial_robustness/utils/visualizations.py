@@ -7,8 +7,59 @@ from gad_adversarial_robustness.utils.experiment_results import Experiment
 from gad_adversarial_robustness.utils.subgraphs import get_subset_neighbors
 from typing import List
 from torch_geometric.utils.num_nodes import maybe_num_nodes
+import torch_geometric
+
+def plot_graph(edge_index):
+    """
+    parameters:
+        edge_index: sparse coo tensor with edge information
+
+    produces a networkx graph
+    """
+    data = torch_geometric.data.Data(x=edge_index.values(), edge_index=edge_index.indices())
+
+    g = torch_geometric.utils.to_networkx(data, to_undirected=True)
+
+    nx.draw(g)
 
 
+def plot_node_subgraph(edge_index, node_indexs, anomaly_list = [], with_labels = False):
+    """
+    parameters:
+        edge_index: sparse coo tensor with edge information
+        node_index: long tensor of node indices
+        anomaly_list: list of anomaly nodes
+        with_labels: boolean for whether to include labels
+
+    produces a networkx graph
+    """
+
+    # Get neighbors
+    neighbors = get_subset_neighbors(node_indexs, edge_index.indices())
+    neighbors = torch.cat([neighbors, node_indexs])
+
+    # Get subgraph
+    subgraph = torch_geometric.utils.subgraph(neighbors, edge_index.indices(), edge_index.values())
+
+    G = nx.Graph()
+    transgraph = torch.transpose(subgraph[0], 0, 1).numpy()
+    G.add_edges_from(transgraph)
+
+    # plot
+    color_map = []
+    for node in G:
+        if node in anomaly_list:
+            if node in node_indexs:
+                color_map.append('red')
+            else:
+                color_map.append('yellow')
+        else:
+            if node in node_indexs:
+                color_map.append('green')
+            else:
+                color_map.append('blue') 
+
+    nx.draw(G, node_color=color_map, with_labels=with_labels)
 def get_rest_of_node_idxs(subset_idxs, num_nodes):
     """
         Function to get the indices of the remaining nodes after removing the nodes specified in subset_idxs.
