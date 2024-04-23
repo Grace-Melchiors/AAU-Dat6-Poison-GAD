@@ -133,12 +133,14 @@ def update_edge_data_with_perturb(edge_data, perturb):
 
 def target_node_mask(target_list, tuple_list):
     """
-        Takes a targetlist, and a list to pick items from. Returned as numpy array
+        Takes a targetlist, and a list to pick items from
     """
-    new_list = np.array([])
+    new_list = []
     for index in target_list:
         new_list.append(tuple_list[index])
     
+    new_list = np.array(new_list)
+
     return new_list
 def get_DOMINANT_eval_values(model, config, target_list, perturb):
     """
@@ -154,6 +156,8 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb):
         - ACC_DOM: AUC value only considering target nodes, according to DOMINANT
     """
 
+    torch.save(model.state_dict(), 'model.pt')
+
     #model.edge_index = update_edge_data_with_perturb(model.edge_index, perturb)
     model.edge_index = update_adj_matrix_with_perturb(model.edge_index, perturb)
     
@@ -164,6 +168,8 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb):
     AUC_DOM = roc_auc_score(model.label.numpy(), model.score)
     ACC_DOM = 0
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
+
+    model.load_state_dict(torch.load('model.pt'))
 
     return AS_DOM, AUC_DOM, ACC_DOM
 
