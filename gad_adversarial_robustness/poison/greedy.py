@@ -3,6 +3,7 @@
 from matplotlib import pyplot as plt
 from sklearn.manifold import TSNE
 from torch_geometric.utils import to_edge_index, dense_to_sparse, to_dense_adj
+from copy import deepcopy
 
 import argparse
 import os
@@ -171,20 +172,29 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = No
         - AUC_DOM: AUC value according to DOMINANT
         - ACC_DOM: AUC value only considering target nodes, according to DOMINANT
     """
+    deepcopy_model = copy.deepcopy(model)
+
+    #torch.save(deepcopy_model.state_dict(), 'model.pt')
 
     #model.edge_index = update_edge_data_with_perturb(model.edge_index, perturb)
-    model.edge_index = update_adj_matrix_with_perturb(model.edge_index, perturb)
+    deepcopy_model.edge_index = update_adj_matrix_with_perturb(deepcopy_model.edge_index, perturb)
     
-    model.to(config['model']['device'])
-    model.fit(config, verbose=False)
+    deepcopy_model.to(config['model']['device'])
+    deepcopy_model.fit(config, verbose=False)
 
 
-    target_nodes_as = target_node_mask(target_list=target_list, tuple_list=model.score)
+    target_nodes_as = target_node_mask(target_list=target_list, tuple_list=deepcopy_model.score)
+    print("All target nodes as:")
+    for node in target_nodes_as:
+        print(node)
+    print("================================")
     AS_DOM = np.sum(target_nodes_as)
     #AS_DOM = np.sum(model.score)
-    AUC_DOM = roc_auc_score(model.label.detach().cpu().numpy(), model.score)
+    AUC_DOM = roc_auc_score(deepcopy_model.label.detach().cpu().numpy(), deepcopy_model.score)
     ACC_DOM = 0
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
+
+    #model.load_state_dict(torch.load('model.pt'))
 
     return AS_DOM, AUC_DOM, ACC_DOM, target_nodes_as
 
