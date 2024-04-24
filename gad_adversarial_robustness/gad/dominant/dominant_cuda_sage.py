@@ -59,8 +59,8 @@ class Encoder(nn.Module):
 class AttributeDecoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(AttributeDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
-        self.gc2 = GCNConv(nhid, nfeat)
+        self.gc1 = CustomGCNConv(nhid, nhid)
+        self.gc2 = CustomGCNConv(nhid, nfeat)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
@@ -73,7 +73,7 @@ class AttributeDecoder(nn.Module):
 class StructureDecoder(nn.Module):
     def __init__(self, nhid: int, dropout: float):
         super(StructureDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
+        self.gc1 = CustomGCNConv(nhid, nhid)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:

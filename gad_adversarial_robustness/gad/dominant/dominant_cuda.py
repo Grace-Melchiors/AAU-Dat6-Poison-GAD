@@ -14,6 +14,9 @@ from torch.nn.modules import Module
 from torch.nn import Parameter
 import math
 from torch_geometric.nn import GCNConv
+from sklearn.manifold import TSNE
+from matplotlib import pyplot as plt
+
 
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
@@ -175,3 +178,15 @@ if __name__ == '__main__':
                      device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
     model.to(config['model']['device'])
     model.fit(config, verbose=True)
+
+    node_embeddings = np.array(model.attrs.cpu().detach())
+    tsne = TSNE(n_components=2, random_state=42)
+    node_embeddings_t_sne = tsne.fit_transform(node_embeddings)
+
+    plt.scatter(node_embeddings_t_sne[:, 0], node_embeddings_t_sne[:, 1], c=dataset.y.bool(), cmap='viridis')
+
+    plt.colorbar()
+    plt.xlabel('Dimension 1')
+    plt.ylabel('Dimension 2')
+    plt.title('Node Embeddings (t-SNE)')
+    plt.show()

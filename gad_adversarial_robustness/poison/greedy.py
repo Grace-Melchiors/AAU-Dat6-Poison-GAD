@@ -1,5 +1,7 @@
 # From https://github.com/zhuyulin-tony/BinarizedAttack/blob/main/src/Greedy.py
 
+from matplotlib import pyplot as plt
+from sklearn.manifold import TSNE
 from torch_geometric.utils import to_edge_index, dense_to_sparse, to_dense_adj
 
 import argparse
@@ -156,7 +158,7 @@ def target_node_mask(target_list, tuple_list):
         new_list.append(tuple_list[index])
     
     return new_list
-def get_DOMINANT_eval_values(model, config, target_list, perturb):
+def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = None):
     """
         parameters:
         - model: The DOMINANT model
@@ -176,7 +178,6 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb):
     model.to(config['model']['device'])
     model.fit(config, verbose=False)
 
-    
 
     target_nodes_as = target_node_mask(target_list=target_list, tuple_list=model.score)
     AS_DOM = np.sum(target_nodes_as)
@@ -296,6 +297,7 @@ def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, co
             true_AScore = model.true_AS(triple_torch).data.detach().cpu().numpy()[0] 
             AS.append(true_AScore)
             AS_DOM_temp, AUC_DOM_temp, ACC_DOM_temp, target_node_as = get_DOMINANT_eval_values(DOMINANT_model, config, target_list, perturb)
+
             CHANGE_IN_AS_TARGET_NODE_AS.append(target_node_as)
             AS_DOM.append(AS_DOM_temp)
             AUC_DOM.append(AUC_DOM_temp)
