@@ -14,7 +14,7 @@ from numba import njit
 
 
 # V Below V from: https://github.com/DSE-MSU/DeepRobust/blob/master/deeprobust/graph/defense/gcn_preprocess.py#L172 
-class GCNJaccard(GCNConv):
+class GCNJaccard(nn.Module):
     """GCNJaccard first preprocesses input graph via droppining dissimilar
     edges and train a GCN based on the processed graph. See more details in
     Adversarial Examples on Graph Data: Deep Insights into Attack and Defense,
@@ -127,7 +127,7 @@ class GCNJaccard(GCNConv):
         self.eval()
         if features is None and adj is None:
             return self.forward(self.features, self.adj_norm)
-        else: ############################################################### not entirely sure how to transfer to the DOMINANT JACCARD VERSION around like 109 near self.eval()
+        else: 
             adj = self.drop_dissimilar_edges(features, adj)
             if type(adj) is not torch.Tensor:
                 features, adj = to_tensor(features, adj, device=self.device)
