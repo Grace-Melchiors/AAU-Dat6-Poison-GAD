@@ -1,4 +1,5 @@
 from torch_sparse import SparseTensor 
+import math
 import torch
 from typing import Union
 import numpy as np
@@ -7,6 +8,8 @@ from torch_geometric.data.dataset import Dataset, BaseData
 import scipy.sparse as sp
 from torch_geometric.utils import to_dense_adj
 
+
+from torch_geometric.datasets import AttributedGraphDataset
 
 # For drawing graph, maybe move to seperate file for display/graph utils
 import networkx as nx
@@ -179,3 +182,65 @@ def top_anomalous_nodes(anomaly_scores, labels, K, print_scores = False):
             print("Index:", idx, "| Anomaly Score:", anomaly_scores[idx])
 
     return top_K_indices
+
+
+
+def get_top_k_anomalies(scores, labels, k, print_scores = False):
+    # Convert lists to numpy arrays
+    scores = np.array(scores)
+    labels = np.array(labels)
+    
+    # Find indices of nodes with label = 1 and non-nan scores
+    valid_indices = np.where((labels == 1) & (~np.isnan(scores)))[0]
+    
+    # Sort the valid indices based on scores
+    sorted_indices = sorted(valid_indices, key=lambda i: scores[i], reverse=True)
+    
+    # Extract top K indices
+    top_k_indices = sorted_indices[:k]
+
+    if print_scores:
+        # Print anomaly scores for the top K indices
+        print("Anomaly scores for top K indices with label = 1:")
+        for idx in top_k_indices:
+            print("Index:", idx, "| Anomaly Score:", scores[idx])
+
+    
+    return top_k_indices
+
+
+def get_anomalies_with_label_1(scores, labels):
+    # Create a list of tuples (index, label, score)
+    nodes = [(i, labels[i], scores[i]) for i in range(len(scores))]
+    
+    # Filter nodes with label = 1
+    nodes_with_label_1 = filter(lambda x: x[1] == 1, nodes)
+    
+    # Sort the filtered list based on anomaly scores in descending order
+    sorted_nodes = sorted(nodes_with_label_1, key=lambda x: x[2], reverse=True)
+    
+    # Print all anomaly scores that have label = 1
+    for node in sorted_nodes:
+        print("Node index: {}, Score: {}".format(node[0], node[2]))
+
+
+def load_injected_dataset(dataset_name):
+    dataset = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
+
+    data = dataset[0]
+
+    seed = 123
+    num_nodes_to_inject = math.ceil((data.num_nodes / 100) * 5)
+    num_nodes_per_clique = 10
+    num_cliques = (num_nodes_to_inject // 2) // num_nodes_per_clique
+    num_contextual_outliers = num_nodes_to_inject - num_cliques * num_nodes_per_clique
+
+    data, ya = gen_contextual_outlier(data, n = num_contextual_outliers, k = 50, seed = seed) 
+    #n (int) – Number of nodes converting to outliers.
+    #k (int) – Number of candidate nodes for each outlier node.
+
+    data, ys = gen_structural_outlier(data, m = num_nodes_per_clique, n = num_cliques, seed = seed)
+    #m (int) - Number nodes in the outlier cliques.
+    #n (int) - Number of outlier clique
+    data.y = torch.logical_or(ys, ya).long()
+    return data

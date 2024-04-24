@@ -1,5 +1,5 @@
 # %% 
-from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes
+from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes, load_injected_dataset, get_top_k_anomalies, get_anomalies_with_label_1
 from gad_adversarial_robustness.poison.greedy import greedy_attack_with_statistics
 import os
 import torch
@@ -19,6 +19,7 @@ from pygod.utils import load_data
 import copy
 from typing import Tuple, List, Any
 import yaml
+import os
 from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant 
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_sage import Dominant as DominantAgg
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
@@ -34,9 +35,10 @@ from sklearn.metrics import (
 from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
 
 USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
-USE_ODDBAL_AS_TO_SELECT_TOP_K_TARGET = True
-TOP_K = 10
+USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
+TOP_K = 20
 DATASET_NAME = 'inj_cora'
+print(DATASET_NAME)
 GRAPH_PARTITION_SIZE = None
 
 script_dir = os.path.abspath('')
@@ -52,7 +54,11 @@ if torch.cuda.is_available():
 else:
     config['model']['device'] = 'cpu'
 
-dataset: Data = load_data(DATASET_NAME)
+if DATASET_NAME == 'inj_cora' or DATASET_NAME == 'inj_amazon':
+    dataset: Data = load_data(DATASET_NAME)
+elif DATASET_NAME == 'Wiki' or DATASET_NAME == 'Cora' or DATASET_NAME == 'Facebook':
+    dataset: Data = load_injected_dataset(DATASET_NAME)
+
 if GRAPH_PARTITION_SIZE is not None:
     subset = torch.randperm(dataset.num_nodes)[:GRAPH_PARTITION_SIZE]
     dataset = dataset.subgraph(subset)
@@ -111,15 +117,15 @@ if USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET:
     print("TOP K_AS:")
     print(testingModel.top_k_AS) 
     target_list = np.array(testingModel.top_k_AS)
-elif USE_ODDBAL_AS_TO_SELECT_TOP_K_TARGET:
+elif USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET:
     target_list_as = get_OddBall_AS(data=dataset, device=config['model']['device'])
     target_list_as = np.array(target_list_as)
     labels_np = label.cpu().detach().numpy()
-    target_list = top_anomalous_nodes(target_list_as, labels_np, TOP_K, print_scores=True)
+    print("ALL:")
+    get_anomalies_with_label_1(target_list_as, labels_np)
+    print("NOT ALL:")
+    target_list = get_top_k_anomalies(target_list_as, labels_np, TOP_K, print_scores=True)
     print(f'Target list: {target_list}')
-
-
-    print("HI")
 else:
     target_list = anomaly_list
 
@@ -147,7 +153,6 @@ dom_model_1 = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hid
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1 = greedy_attack_with_statistics(
     model, triple, dom_model_1, config, target_list, budget, print_stats = True)
-
 
 ## MODIFIED
 dom_model_2 = DominantAgg(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
