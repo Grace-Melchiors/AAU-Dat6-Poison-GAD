@@ -189,12 +189,14 @@ if __name__ == '__main__':
 
     dataset: Data = load_data("inj_cora")
     adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
+    from torch_geometric.utils import dense_to_sparse
+    edge_index = dense_to_sparse(torch.tensor(adj))[0]
     #edge_index = torch.LongTensor(np.array(sp.coo_matrix(adj).nonzero()))
     adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
     #attrs = torch.FloatTensor(attrs)
 
     from torch_geometric.utils import to_torch_sparse_tensor
-    edge_index = dataset.edge_index.to(config['model']['device'])
+    #edge_index = dataset.edge_index.to(config['model']['device'])
     #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])

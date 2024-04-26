@@ -185,28 +185,44 @@ def top_anomalous_nodes(anomaly_scores, labels, K, print_scores = False):
 
 
 
-def get_top_k_anomalies(scores, labels, k, print_scores = False):
+def get_anomaly_indexes(scores, labels, k, method='top', print_scores = False):
     # Convert lists to numpy arrays
     scores = np.array(scores)
     labels = np.array(labels)
     
     # Find indices of nodes with label = 1 and non-nan scores
-    valid_indices = np.where((labels == 1) & (~np.isnan(scores)))[0]
+    #valid_indices = np.where((labels == 1) & (~np.isnan(scores)))[0]
+    valid_indices = torch.where(torch.tensor(labels) == 1)[0]
+    valid_indices = valid_indices.detach().cpu().numpy()
+
+    if method == 'top':
+        # Sort the valid indices based on scores in descending order
+        sorted_indices = sorted(valid_indices, key=lambda i: scores[i], reverse=True)
+
+    elif method == 'lowest':
+        # Sort the valid indices based on scores in ascending order
+        sorted_indices = sorted(valid_indices, key=lambda i: scores[i])
+    elif method == 'normal':
+        # Sample K indices from a normal distribution centered around the mean of scores
+        mean_score = np.mean(scores[valid_indices])
+        std_dev = np.std(scores[valid_indices])
+        sampled_indices = np.random.normal(mean_score, std_dev, k)
+        # Clip the sampled indices to be within the valid range
+        clipped_indices = np.clip(sampled_indices, 0, len(valid_indices)-1)
+        # Round and convert to integers
+        sorted_indices = np.argsort(np.abs(clipped_indices - mean_score))[:k]
     
-    # Sort the valid indices based on scores
-    sorted_indices = sorted(valid_indices, key=lambda i: scores[i], reverse=True)
-    
-    # Extract top K indices
-    top_k_indices = sorted_indices[:k]
+    # Extract K indices
+    selected_indices = sorted_indices[:k]
 
     if print_scores:
         # Print anomaly scores for the top K indices
         print("Anomaly scores for top K indices with label = 1:")
-        for idx in top_k_indices:
+        for idx in selected_indices:
             print("Index:", idx, "| Anomaly Score:", scores[idx])
-
     
-    return top_k_indices
+    return selected_indices
+
 
 
 def get_anomalies_with_label_1(scores, labels):

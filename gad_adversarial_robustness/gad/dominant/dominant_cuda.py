@@ -1,4 +1,5 @@
 import os
+from pygod.detector import DOMINANT
 import yaml
 import numpy as np
 import scipy.sparse as sp

@@ -1,5 +1,6 @@
 # %% 
-from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes, load_injected_dataset, get_top_k_anomalies, get_anomalies_with_label_1
+from torch_geometric.utils import dense_to_sparse
+from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes, load_injected_dataset, get_anomaly_indexes, get_anomalies_with_label_1
 from gad_adversarial_robustness.poison.greedy import greedy_attack_with_statistics
 import os
 import torch
@@ -36,7 +37,10 @@ from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
 
 USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
-TOP_K = 20
+
+TOP_K = 15
+SAMPLE_MODE = 'top' # 'top', 'lowest' or 'normal'
+
 DATASET_NAME = 'inj_cora'
 print(DATASET_NAME)
 GRAPH_PARTITION_SIZE = None
@@ -69,7 +73,8 @@ print(dataset.num_nodes)
 
 adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
 adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
-edge_index = dataset.edge_index.to(config['model']['device'])
+edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
+#edge_index = dataset.edge_index.to(config['model']['device'])
 label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
 attrs = dataset.x.to(config['model']['device'])
 #sparse_adj = to_torch_sparse_tensor(edge_index)
@@ -113,6 +118,7 @@ testingModel = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hi
 testingModel.to(config['model']['device'])
 testingModel.fit(config, verbose=False, top_k=TOP_K)
 
+target_list = []
 if USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET:
     print("TOP K_AS:")
     print(testingModel.top_k_AS) 
@@ -124,7 +130,7 @@ elif USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET:
     print("ALL:")
     get_anomalies_with_label_1(target_list_as, labels_np)
     print("NOT ALL:")
-    target_list = get_top_k_anomalies(target_list_as, labels_np, TOP_K, print_scores=True)
+    target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True)
     print(f'Target list: {target_list}')
 else:
     target_list = anomaly_list
@@ -133,9 +139,12 @@ else:
 print("Making model...")
 model = multiple_AS(target_lst = target_list, n_node = amount_of_nodes, device = config['model']['device'])
 
+for target in target_list:
+    print(f'ID: {target}, Target: {label[target]}')
+
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 2
+budget = TOP_K * 3
 
 print("Starting attack...")
 """
@@ -147,6 +156,7 @@ _, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index = greedy_attack_with_statis
     model, triple, dom_model, config, target_list, budget, print_stats = True)
 # -------------
 """
+
 
 dom_model_1 = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                 device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
@@ -250,6 +260,7 @@ def plot_anomaly_scores(anomaly_scores, model_name):
     plt.legend()
     plt.grid(True)
     plt.show()
+
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1, "Unmodified DOMINANT")
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_2, "Modified DOMINANT")
 

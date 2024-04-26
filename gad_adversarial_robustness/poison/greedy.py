@@ -1,5 +1,6 @@
 # From https://github.com/zhuyulin-tony/BinarizedAttack/blob/main/src/Greedy.py
 
+import time
 from matplotlib import pyplot as plt
 from sklearn.manifold import TSNE
 from torch_geometric.utils import to_edge_index, dense_to_sparse, to_dense_adj
@@ -20,6 +21,13 @@ from gad_adversarial_robustness.poison.base_classes import BasePoison
 from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant 
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.utils.convert import from_scipy_sparse_matrix
+
+def accuracy(y_true, y_pred):
+    y_true = torch.tensor(y_true)
+    y_pred = torch.tensor(y_pred)
+    correct = torch.sum(y_true == y_pred).item()
+    total = len(y_true)
+    return correct / total
 
 class multiple_AS(nn.Module):
     def __init__(self, target_lst, n_node, device):
@@ -115,8 +123,8 @@ def update_adj_matrix_with_perturb(adj_matrix, perturb):
 
     for change in perturb:
         print(f'Change: {change}')
-        adj_matrix[change[0], change[1]] = change[2]
-        adj_matrix[change[1], change[0]] = change[2]
+        adj_matrix[change[0], change[1]] -= change[2]
+        adj_matrix[change[1], change[0]] -= change[2]
     
 
     print(adj_matrix.shape)
@@ -172,33 +180,39 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = No
         - AUC_DOM: AUC value according to DOMINANT
         - ACC_DOM: AUC value only considering target nodes, according to DOMINANT
     """
-    deepcopy_model = copy.deepcopy(model)
+    #deepcopy_model = copy.deepcopy(model)
 
-    #torch.save(deepcopy_model.state_dict(), 'model.pt')
+    torch.save(model.state_dict(), 'model.pt')
 
     #model.edge_index = update_edge_data_with_perturb(model.edge_index, perturb)
-    deepcopy_model.edge_index = update_adj_matrix_with_perturb(deepcopy_model.edge_index, perturb)
+    start_time = time.time()
+    model.edge_index = update_adj_matrix_with_perturb(model.edge_index, perturb)
+    end_time = time.time()
+    runtime = end_time - start_time
+    print(f'runtime: {runtime} seconds')
+
+
     
-    deepcopy_model.to(config['model']['device'])
-    deepcopy_model.fit(config, verbose=False)
+    model.to(config['model']['device'])
+    model.fit(config, verbose=False)
 
 
-    target_nodes_as = target_node_mask(target_list=target_list, tuple_list=deepcopy_model.score)
+    target_nodes_as = target_node_mask(target_list=target_list, tuple_list=model.score)
     print("All target nodes as:")
     for node in target_nodes_as:
         print(node)
     print("================================")
     AS_DOM = np.sum(target_nodes_as)
     #AS_DOM = np.sum(model.score)
-    AUC_DOM = roc_auc_score(deepcopy_model.label.detach().cpu().numpy(), deepcopy_model.score)
-    ACC_DOM = 0
+    AUC_DOM = roc_auc_score(model.label.detach().cpu().numpy(), model.score)
+    ACC_DOM = accuracy(model.label.detach().cpu().numpy(), model.score)
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
 
-    #model.load_state_dict(torch.load('model.pt'))
+    model.load_state_dict(torch.load('model.pt'))
 
     return AS_DOM, AUC_DOM, ACC_DOM, target_nodes_as
 
-def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, config, target_list, B, CPI = 1, print_stats = False):
+def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_list, B, CPI = 1, print_stats = False):
     """
         Parameters: 
         - model: The surrogate model
@@ -282,7 +296,8 @@ def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, co
     
             # Takes the edge with largest gradient by using neg K value(last k element)and finds the first that isn't already changed
             # Thusly changing the edge with the highest value
-            while v_grad[K][:2].astype('int').tolist() in perturb:
+            slice = [perturb[i][0:2] for i in range(len(perturb))]
+            while v_grad[K][:2].astype('int').tolist() in slice:
                 K -= 1
             
             # do not delete edge from singleton.
@@ -292,6 +307,7 @@ def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, co
                 K -= 1
             
             target_grad = v_grad[int(K)] #Picks edge to target
+            
 
             # Get index of target in triple
             target_index = np.where(np.all((triple[:,:2] == target_grad[:2]), axis = 1) == True)[0][0]
@@ -301,7 +317,7 @@ def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, co
             #triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True)
 
             # Add perturb to list of perturbs
-            perturb.append([int(target_grad[0]),int(target_grad[1]), int(0 < target_grad[2])]) 
+            perturb.append([int(target_grad[0]),int(target_grad[1]), np.sign(target_grad[2])]) 
 
             # Get and save updated scores and values
             true_AScore = model.true_AS(triple_torch).data.detach().cpu().numpy()[0] 
@@ -361,7 +377,7 @@ def poison_attack(model, triple, B, print_stats = True):
 
         # Takes the edge with largest gradient by using neg K value(last k element)and finds the first that isn't already changed
         # Thusly changing the edge with the highest value
-        while v_grad[K][:2].astype('int').tolist() in perturb:
+        while v_grad[K][:2].astype('int').tolist() in perturb[:, :2]:
             K -= 1
             
             
