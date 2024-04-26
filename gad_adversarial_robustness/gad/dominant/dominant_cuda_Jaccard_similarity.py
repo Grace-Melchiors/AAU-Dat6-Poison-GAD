@@ -15,7 +15,6 @@ from torch.nn import Parameter
 import math
 from torch_geometric.nn import GCNConv
 
-
 from gad_adversarial_robustness.gad.GCN_Jaccard import GCNJaccard, to_tensor, is_sparse_tensor, normalize_adj, sparse_mx_to_torch_sparse_tensor, to_scipy, normalize_adj_tensor
 from tqdm import tqdm
 from numba import njit
@@ -31,8 +30,7 @@ class Encoder(nn.Module):
         x = F.relu(self.gc1(x, edge_index))
         x = F.dropout(x, self.dropout, training=self.training)
         x = F.relu(self.gc2(x, edge_index))
-        return x
-
+        return x  
 
 class AttributeDecoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
@@ -46,7 +44,6 @@ class AttributeDecoder(nn.Module):
         x = F.dropout(x, self.dropout, training=self.training)
         x = F.relu(self.gc2(x, edge_index))
         return x
-
 
 class StructureDecoder(nn.Module):
     def __init__(self, nhid: int, dropout: float):
@@ -96,15 +93,19 @@ class Dominant(nn.Module):
         # modified_adj = drop_dissimilar_edges_independentVersion(self.attrs, adj)
         self.attrs, modified_adj, labels = to_tensor(self.attrs, modified_adj, self.label, device=self.device)
         self.adj = modified_adj
-        self.label = labels        
+        self.label = labels
+
+        if is_sparse_tensor(self.adj): # normalizing adj matrix: from line 176-182 (https://github.com/DSE-MSU/DeepRobust/blob/master/deeprobust/graph/defense/gcn.py)
+            adj_norm = normalize_adj_tensor(self.adj, sparse=True)
+        else:
+            adj_norm = normalize_adj_tensor(self.adj)
         ## !---------!---------!---------!---------!--------- ##!---------!---------!--------- ##
 
         for epoch in range(config['model']['epochs']):
             self.train()
             optimizer.zero_grad()
             A_hat, X_hat = self.forward(self.attrs, self.edge_index)
-            # loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
-            loss, struct_loss, feat_loss = loss_func(self.label, A_hat, self.attrs, X_hat, config['model']['alpha'])
+            loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
             loss = torch.mean(loss)
             loss.backward()
             optimizer.step()
@@ -117,8 +118,7 @@ class Dominant(nn.Module):
 
                 A_hat, X_hat = self.forward(self.attrs, self.edge_index)
                 
-                # loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
-                loss, struct_loss, feat_loss = loss_func(self.label, A_hat, self.attrs, X_hat, config['model']['alpha'])
+                loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
                 
                 self.score = loss.detach().cpu().numpy()
 
