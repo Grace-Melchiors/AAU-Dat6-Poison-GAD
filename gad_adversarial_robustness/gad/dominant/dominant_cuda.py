@@ -106,7 +106,8 @@ class Dominant(nn.Module):
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
                 # print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
-                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label, self.score)}")
+                # print(f"Epoch: {epoch:04d}, roc-auc: {roc_auc_score(self.label, self.score)}") ###################################### Experiencing problem here !!!!!!!!!!!!!!
+                print(f"Epoch: {epoch:04d}, roc-auc: {roc_auc_score(self.label, self.score.reshape(-1, 1))}")
 
                 # Identify and store the IDs of the nodes with the top K highest anomaly scores
                 if top_k is not None:
