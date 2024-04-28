@@ -327,8 +327,10 @@ def poison_attack(model, triple, B, print_stats = True):
     triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
     AS = []
     perturb = []
-    AS.append(model.true_AS(triple_torch).data.numpy()[0])
-    if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.numpy()[0])
+    inital_AS = model.true_AS(triple_torch).data.numpy()[0]
+    AS.append(inital_AS)
+
+    if(print_stats): print('initial anomaly score:', inital_AS)
     
     for i in range(1,B+1):
         loss = model.forward(triple_torch)
@@ -336,11 +338,9 @@ def poison_attack(model, triple, B, print_stats = True):
         
         tmp = triple_torch.grad.data.numpy() # Get gradient of tensor with respect to data, stored in tmp
 
-
         grad = np.concatenate((triple_torch[:,:2].data.numpy(),tmp[:,2:]),1) # Concat edge descriptor with gradients
         
-
-        v_grad = np.zeros((len(grad),3))
+        v_grad = np.zeros((len(grad),3)) # 2D array filled w/ zeros
 
         for j in range(len(grad)):
             v_grad[j,0] = grad[j,0]
@@ -361,7 +361,8 @@ def poison_attack(model, triple, B, print_stats = True):
 
         # Takes the edge with largest gradient by using neg K value(last k element)and finds the first that isn't already changed
         # Thusly changing the edge with the highest value
-        while v_grad[K][:2].astype('int').tolist() in perturb:
+        slice = [perturb[i][0:2] for i in range(len(perturb))]
+        while v_grad[K][:2].astype('int').tolist() in slice:
             K -= 1
             
             
