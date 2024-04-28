@@ -18,7 +18,7 @@ from torch_geometric.nn import GCNConv
 from torch.autograd import Variable
 import random
 from torch.nn import init
-from gad_adversarial_robustness.gad.dominant.means import dense_cpu_soft_weighted_medoid_k_neighborhood
+from gad_adversarial_robustness.gad.dominant.means import dense_cpu_soft_weighted_medoid_k_neighborhood, dense_device_soft_weighted_medoid_k_neighborhood
 from typing import Dict, Any
 
 
@@ -32,8 +32,7 @@ class CustomGCNConv(GCNConv):
         edge_weights = torch.ones((edge_index.size(1), ), dtype=torch.float).to('cuda')
         A = torch.sparse_coo_tensor(edge_index, edge_weights, (node_feats.size(0), node_feats.size(0))).coalesce()
         #A = torch.sparse.FloatTensor(edge_index, edge_weights).coalesce()
-        
-        return dense_cpu_soft_weighted_medoid_k_neighborhood(A, node_feats, **self._mean_kwargs)
+        return dense_device_soft_weighted_medoid_k_neighborhood(A=A, x=node_feats, device='cuda', **self._mean_kwargs)
 
     
     def aggregate(self, node_feats, edge_index, **kwargs):
@@ -112,6 +111,8 @@ class Dominant(nn.Module):
             self.train()
             optimizer.zero_grad()
             A_hat, X_hat = self.forward(self.attrs, self.edge_index)
+            self.adj_label = to_dense_adj(self.edge_index)[0]
+            #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
             loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
             loss = torch.mean(loss)
             loss.backward()
@@ -190,7 +191,8 @@ if __name__ == '__main__':
     dataset: Data = load_data("inj_cora")
     adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
     from torch_geometric.utils import dense_to_sparse
-    edge_index = dense_to_sparse(torch.tensor(adj))[0]
+    #edge_index = dense_to_sparse(torch.tensor(adj))[0]
+    edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     #edge_index = torch.LongTensor(np.array(sp.coo_matrix(adj).nonzero()))
     adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
     #attrs = torch.FloatTensor(attrs)
