@@ -1,5 +1,6 @@
 # From https://github.com/zhuyulin-tony/BinarizedAttack/blob/main/src/Greedy.py
 
+import time
 from matplotlib import pyplot as plt
 from sklearn.manifold import TSNE
 from torch_geometric.utils import to_edge_index, dense_to_sparse, to_dense_adj
@@ -20,6 +21,13 @@ from gad_adversarial_robustness.poison.base_classes import BasePoison
 from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant 
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.utils.convert import from_scipy_sparse_matrix
+
+def accuracy(y_true, y_pred):
+    y_true = torch.tensor(y_true)
+    y_pred = torch.tensor(y_pred)
+    correct = torch.sum(y_true == y_pred).item()
+    total = len(y_true)
+    return correct / total
 
 class multiple_AS(nn.Module):
     def __init__(self, target_lst, n_node, device):
@@ -159,7 +167,7 @@ def target_node_mask(target_list, tuple_list):
         new_list.append(tuple_list[index])
     
     return new_list
-def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = None):
+def get_DOMINANT_eval_values(model, config, target_list, perturb, dom_params):
     """
         parameters:
         - model: The DOMINANT model
@@ -172,33 +180,190 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = No
         - AUC_DOM: AUC value according to DOMINANT
         - ACC_DOM: AUC value only considering target nodes, according to DOMINANT
     """
-    deepcopy_model = copy.deepcopy(model)
+    #deepcopy_model = copy.deepcopy(model)
 
-    #torch.save(deepcopy_model.state_dict(), 'model.pt')
+    model = model(**dom_params)
+
+
+    #torch.save(model.state_dict(), 'model.pt')
 
     #model.edge_index = update_edge_data_with_perturb(model.edge_index, perturb)
-    deepcopy_model.edge_index = update_adj_matrix_with_perturb(deepcopy_model.edge_index, perturb)
+    start_time = time.time()
+    model.edge_index = update_adj_matrix_with_perturb(model.edge_index, perturb)
+    end_time = time.time()
+    runtime = end_time - start_time
+    print(f'runtime: {runtime} seconds')
+
+
     
-    deepcopy_model.to(config['model']['device'])
-    deepcopy_model.fit(config, verbose=False)
+    model.to(config['model']['device'])
+    model.fit(config, verbose=False)
 
 
-    target_nodes_as = target_node_mask(target_list=target_list, tuple_list=deepcopy_model.score)
+    target_nodes_as = target_node_mask(target_list=target_list, tuple_list=model.score)
     print("All target nodes as:")
     for node in target_nodes_as:
         print(node)
     print("================================")
     AS_DOM = np.sum(target_nodes_as)
     #AS_DOM = np.sum(model.score)
-    AUC_DOM = roc_auc_score(deepcopy_model.label.detach().cpu().numpy(), deepcopy_model.score)
-    ACC_DOM = 0
+    AUC_DOM = roc_auc_score(model.label.detach().cpu().numpy(), model.score)
+    ACC_DOM = accuracy(model.label.detach().cpu().numpy(), model.score)
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
 
     #model.load_state_dict(torch.load('model.pt'))
 
     return AS_DOM, AUC_DOM, ACC_DOM, target_nodes_as
 
-def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, config, target_list, B, CPI = 1, print_stats = False):
+def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINANT_model_2, dom_params, config, target_list, B, CPI = 1, print_stats = False):
+    """
+        Parameters: 
+        - model: The surrogate model
+        - triple: The edge_data to be posioned in triple form
+        - DOMINANT_model_1: The first DOMINANT model
+        - DOMINANT_model_2: The second DOMINANT model
+        - config: The config of the DOMINANT model
+        - target_list: List of target nodes
+        - B: The number of perturbations
+        - CPI: The number of perturbations per iteration
+        - print_stats: Whether to print the anomaly score and changed edge after each perturbation
+
+        Returbs:
+        - triple: The poisoned edge_data
+        - AS: List of the anomaly score after each perturbation according to surrogate model
+        - AS_DOM: List of anomaly score after each perturbation according to DOMINANT
+        - AUC_DOM: AUC value after each perturbation according to DOMINANT
+        - ACC_DOM: Accuracy of the predicting the target nodes
+        - perturb: List of the changed edges
+        - edge_index: The edge_index of the poisoned graph, converted to torch format
+    """
+
+
+
+
+    triple_copy = triple.copy()
+    # print(f'triple copy type: {type(triple_copy)}')
+    triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
+    AS = []
+    AS_DOM = [[], []]
+    AUC_DOM = [[], []]
+    ACC_DOM = [[], []]
+    CHANGE_IN_AS_TARGET_NODE_AS = [[], []]
+    perturb = []
+    print("True AS")
+    print(model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
+    print(model.true_AS(triple_torch).data.detach().cpu().numpy())
+    print("After AS")
+    AS.append(model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
+    AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
+    AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
+    CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
+    CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
+    AS_DOM[0].append(AS_DOM_temp_1)
+    AS_DOM[1].append(AS_DOM_temp_2)
+    AUC_DOM[0].append(AUC_DOM_temp_1)
+    AUC_DOM[1].append(AUC_DOM_temp_2)
+    ACC_DOM[0].append(ACC_DOM_temp_1)
+    ACC_DOM[1].append(ACC_DOM_temp_2)
+    if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
+    
+    i = 0
+    count = 0
+    while i < B:   #While we have not reached the maximum number of perturbations
+        count += 1
+        print("Perturbation number:", count)
+        
+        loss = model.forward(triple_torch)
+        loss.backward()
+        
+        tmp = triple_torch.grad.data.numpy() # Get gradient of tensor with respect to data, stored in tmp
+
+
+        grad = np.concatenate((triple_torch[:,:2].data.numpy(),tmp[:,2:]),1) # Concat edge descriptor with gradients
+        
+
+        v_grad = np.zeros((len(grad),3))
+
+        for j in range(len(grad)):
+            v_grad[j,0] = grad[j,0]
+            v_grad[j,1] = grad[j,1]
+            if triple_copy[j,2] == 0 and grad[j,2] < 0: # If no edge and gradient is negative
+                v_grad[j,2] = grad[j,2]
+            elif triple_copy[j,2] == 1 and grad[j,2] > 0: # If edge and gradient is positive
+                v_grad[j,2] = grad[j,2]
+            else:
+                continue
+
+        # Get indexes of sorted gradients in descending order [3,1,2]->[1,2,0]
+        v_grad = v_grad[np.abs(v_grad[:,2]).argsort()] 
+        
+
+        # attack w.r.t gradient information.
+        K = -1
+
+        # repeat for CPI amount of times, or till we reach the maximum number of perturbations
+        j = 0
+        while j < CPI and i < B:
+            j += 1
+            i += 1
+    
+            # Takes the edge with largest gradient by using neg K value(last k element)and finds the first that isn't already changed
+            # Thusly changing the edge with the highest value
+            slice = [perturb[i][0:2] for i in range(len(perturb))]
+            while v_grad[K][:2].astype('int').tolist() in slice:
+                K -= 1
+            
+            # do not delete edge from singleton.
+            while v_grad[int(K)][2] > 0 and \
+                (model.adjacency_matrix(triple_torch).data.numpy()[int(v_grad[int(K)][0])].sum() <= 1 or \
+                model.adjacency_matrix(triple_torch).data.numpy()[int(v_grad[int(K)][1]) ].sum() <= 1):
+                K -= 1
+            
+            target_grad = v_grad[int(K)] #Picks edge to target
+            
+
+            # Get index of target in triple
+            target_index = np.where(np.all((triple[:,:2] == target_grad[:2]), axis = 1) == True)[0][0]
+
+            # Update representation of adjacency matrix (triple_torch)
+            triple_copy[target_index,2] -= np.sign(target_grad[2])
+            #triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True)
+
+            # Add perturb to list of perturbs
+            perturb.append([int(target_grad[0]),int(target_grad[1]), int(0 < target_grad[2])]) 
+
+            # Get and save updated scores and values
+            true_AScore = model.true_AS(triple_torch).data.detach().cpu().numpy()[0] 
+            AS.append(true_AScore)
+            AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
+            AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
+
+
+            CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
+            CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
+            AS_DOM[0].append(AS_DOM_temp_1)
+            AS_DOM[1].append(AS_DOM_temp_2)
+            AUC_DOM[0].append(AUC_DOM_temp_1)
+            AUC_DOM[1].append(AUC_DOM_temp_2)
+            ACC_DOM[0].append(ACC_DOM_temp_1)
+            ACC_DOM[1].append(ACC_DOM_temp_2)
+
+            if(print_stats): 
+                print('First model: Iteration:', i, '--- Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_1, 
+                                   '--- DOM AUC:', AUC_DOM_temp_1, '--- TARGET DOM ACC:', ACC_DOM_temp_1)
+                print('First model: Iteration:', i, '--- Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
+                                   '--- DOM AUC:', AUC_DOM_temp_2, '--- TARGET DOM ACC:', ACC_DOM_temp_2)
+    AS = np.array(AS)    
+
+    edge_index = [] 
+    edge_index.append(update_adj_matrix_with_perturb(DOMINANT_model_1.edge_index, perturb))
+    edge_index.append(update_adj_matrix_with_perturb(DOMINANT_model_2.edge_index, perturb))
+
+    return triple_torch, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index, CHANGE_IN_AS_TARGET_NODE_AS
+
+
+
+def greedy_attack_with_statistics(model, triple, DOMINANT_model, config, target_list, B, CPI = 1, print_stats = False):
     """
         Parameters: 
         - model: The surrogate model
@@ -282,7 +447,8 @@ def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, co
     
             # Takes the edge with largest gradient by using neg K value(last k element)and finds the first that isn't already changed
             # Thusly changing the edge with the highest value
-            while v_grad[K][:2].astype('int').tolist() in perturb:
+            slice = [perturb[i][0:2] for i in range(len(perturb))]
+            while v_grad[K][:2].astype('int').tolist() in slice:
                 K -= 1
             
             # do not delete edge from singleton.
@@ -292,6 +458,7 @@ def greedy_attack_with_statistics(model: multiple_AS, triple, DOMINANT_model, co
                 K -= 1
             
             target_grad = v_grad[int(K)] #Picks edge to target
+            
 
             # Get index of target in triple
             target_index = np.where(np.all((triple[:,:2] == target_grad[:2]), axis = 1) == True)[0][0]
