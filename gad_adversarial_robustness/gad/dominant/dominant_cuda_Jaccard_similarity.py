@@ -60,7 +60,7 @@ class StructureDecoder(nn.Module):
 
 class Dominant(nn.Module):
     def __init__(self, feat_size: int, hidden_size: int, dropout: float, device: str, 
-                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, binary_feature=True):
+                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, adj: np.ndarray, binary_feature=True):
         super(Dominant, self).__init__()
         self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
@@ -76,6 +76,7 @@ class Dominant(nn.Module):
 
         ## JACCARD related: !---------!---------!---------!---------!--------- ##---------!--------- ##
         self.binary_feature = binary_feature
+        self.adj=adj
         ## !---------!---------!---------!---------!--------- ##---------!--------- ##
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -89,7 +90,7 @@ class Dominant(nn.Module):
 
         ## JACCARD related: !---------!---------!---------!---------!--------- ##---------!--------- ##
         self.threshold = threshold
-        modified_adj = self.drop_dissimilar_edges(self.attrs, adj)
+        modified_adj = self.drop_dissimilar_edges(self.attrs, self.adj)
         # modified_adj = drop_dissimilar_edges_independentVersion(self.attrs, adj)
         self.attrs, modified_adj, labels = to_tensor(self.attrs, modified_adj, self.label, device=self.device)
         self.adj = modified_adj
