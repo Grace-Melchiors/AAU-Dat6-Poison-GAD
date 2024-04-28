@@ -128,8 +128,8 @@ class Encoder(nn.Module):
 class AttributeDecoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(AttributeDecoder, self).__init__()
-        self.gc1 = GCNConv(in_channels=nhid, out_channels=nhid)
-        self.gc2 = GCNConv(in_channels=nhid, out_channels=nfeat)
+        self.gc1 = RobustGraphConvolution(in_channels=nhid, out_channels=nhid)
+        self.gc2 = RobustGraphConvolution(in_channels=nhid, out_channels=nfeat)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
@@ -142,7 +142,7 @@ class AttributeDecoder(nn.Module):
 class StructureDecoder(nn.Module):
     def __init__(self, nhid: int, dropout: float):
         super(StructureDecoder, self).__init__()
-        self.gc1 = GCNConv(in_channels=nhid, out_channels=nhid)
+        self.gc1 = RobustGraphConvolution(in_channels=nhid, out_channels=nhid)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:

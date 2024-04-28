@@ -1,4 +1,5 @@
 import os
+from pygod.detector import DOMINANT
 import yaml
 import numpy as np
 import scipy.sparse as sp
@@ -87,7 +88,10 @@ class Dominant(nn.Module):
         for epoch in range(config['model']['epochs']):
             self.train()
             optimizer.zero_grad()
+            # TODO: Normalize for every forward step
             A_hat, X_hat = self.forward(self.attrs, self.edge_index)
+            self.adj_label = to_dense_adj(self.edge_index)[0]
+            #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
             loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
             loss = torch.mean(loss)
             loss.backward()
@@ -118,9 +122,6 @@ class Dominant(nn.Module):
                     print(f"Top {top_k} highest anomaly scores' node IDs and scores:")
                     #for idx, score in zip(top_k_AS_indices, top_k_AS_scores):
                     #    print(f"Node ID: {idx}, Anomaly Score: {score}")
-
-
-
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
     adj = sp.coo_matrix(adj)
@@ -170,8 +171,9 @@ if __name__ == '__main__':
     adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
     #attrs = torch.FloatTensor(attrs)
 
-    from torch_geometric.utils import to_torch_sparse_tensor
-    edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
+    from torch_geometric.utils import to_torch_sparse_tensor, dense_to_sparse
+    #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
+    edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
 
@@ -179,15 +181,4 @@ if __name__ == '__main__':
                      device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
     model.to(config['model']['device'])
     model.fit(config, verbose=True)
-
-    node_embeddings = np.array(model.attrs.cpu().detach())
-    tsne = TSNE(n_components=2, random_state=42)
-    node_embeddings_t_sne = tsne.fit_transform(node_embeddings)
-
-    plt.scatter(node_embeddings_t_sne[:, 0], node_embeddings_t_sne[:, 1], c=dataset.y.bool(), cmap='viridis')
-
-    plt.colorbar()
-    plt.xlabel('Dimension 1')
-    plt.ylabel('Dimension 2')
-    plt.title('Node Embeddings (t-SNE)')
-    plt.show()
+    

@@ -332,6 +332,56 @@ def soft_weighted_medoid_k_neighborhood(
                                                                reliable_adj_values, batch_size, n, x)
     return new_embeddings
 
+def dense_device_soft_weighted_medoid_k_neighborhood(
+    A: torch.sparse.FloatTensor,
+    x: torch.Tensor,
+    device: torch.device,
+    k: int = 32,
+    temperature: float = 1.0,
+    with_weight_correction: bool = False,
+    **kwargs
+) -> torch.Tensor:
+    """Dense cpu implementation (for details see `soft_weighted_medoid_k_neighborhood`).
+    """
+    A_dense = A.to_dense().to(device)
+
+    n, d = x.size()
+    batch_size = A_dense.size(0)
+
+    l2 = _distance_matrix(x).to(device)
+
+    topk_a, topk_a_idx = torch.topk(A_dense, k=k, dim=1)
+    topk_l2_idx = topk_a_idx[:, None, :].expand(batch_size, k, k)
+    distances_k = (
+        topk_a[:, None, :].expand(batch_size, k, k)
+        * l2[topk_l2_idx, topk_l2_idx.transpose(1, 2)]
+    ).sum(-1).to(device)
+
+    # when all values of a row are 0 (nodes without any outgoing edges)
+    # then we get NaN results from the softmax which propagate to the embedding
+    distances_k[topk_a == 0] = torch.finfo(distances_k.dtype).max
+    distances_k[~torch.isfinite(distances_k)] = torch.finfo(distances_k.dtype).max
+
+    row_sum = A_dense.sum(-1)[:, None].to(device)
+    topk_weights = torch.zeros(A_dense.shape, device=device)
+
+    topk_weights[torch.arange(batch_size)[:, None].expand(batch_size, k),
+                 topk_a_idx] = F.softmax(- distances_k / temperature, dim=-1).to(device)
+
+    if with_weight_correction:
+        topk_weights[torch.arange(batch_size)[:, None].expand(batch_size, k), topk_a_idx] *= topk_a
+        # Here we have another chance to introduce more NaNs for nodes without any outgoing edges
+        # in these cases we are dividing my zero here
+        topk_weights /= topk_weights.sum(-1)[:, None].to(device)
+
+    # For nodes with no outgoing edges (sum of this row is zero) we have NaN values in our
+    # topk_weights matrix which we need to correct.
+    # We set this to 0 because multiplying with row_sum in the returm statement should have
+    # resulted in a 0 vector for these nodes' embedding anyways
+    zero_embedding_mask = (row_sum == 0).flatten().to(device)
+    topk_weights[zero_embedding_mask] = 0
+
+    return row_sum * (topk_weights @ x)
 
 def dense_cpu_soft_weighted_medoid_k_neighborhood(
     A: torch.sparse.FloatTensor,
