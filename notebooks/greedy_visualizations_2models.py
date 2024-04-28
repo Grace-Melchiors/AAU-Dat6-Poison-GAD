@@ -157,23 +157,29 @@ _, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index = greedy_attack_with_statis
 # -------------
 """
 
+dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden_dim'], 'dropout': config['model']['dropout'],
+                'device': config['model']['device'], 'edge_index': edge_index, 'adj_label': adj_label, 'attrs': attrs, 'label': label}
 
-dom_model_1 = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+
+#_, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index = greedy_attack_with_statistics(
+#    model, triple, dom_model, config, target_list, budget, print_stats = True)
+
+#dom_model_1 = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
+#                device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
 
 #_, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1 = greedy_attack_with_statistics(
 #    model, triple, dom_model_1, config, target_list, budget, print_stats = True)
 
 ## MODIFIED
-dom_model_2 = DominantAgg(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+#dom_model_2 = DominantAgg(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
+#                device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
 
 #_, AS_2, AS_DOM_2, AUC_DOM_2, ACC_DOM_2, perturb_2, edge_index_2, CHANGE_IN_TARGET_NODE_AS_2 = greedy_attack_with_statistics(
 #    model, triple, dom_model_2, config, target_list, budget, print_stats = True)
 
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1 = greedy_attack_with_statistics_multi(
-    model, triple, dom_model_1, dom_model_2, config, target_list, budget, print_stats = True)
+    model, triple, Dominant, DominantAgg, dom_params, config, target_list, budget, print_stats = True)
 
 # -------------
 

@@ -167,7 +167,7 @@ def target_node_mask(target_list, tuple_list):
         new_list.append(tuple_list[index])
     
     return new_list
-def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = None):
+def get_DOMINANT_eval_values(model, config, target_list, perturb, dom_params):
     """
         parameters:
         - model: The DOMINANT model
@@ -182,7 +182,10 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = No
     """
     #deepcopy_model = copy.deepcopy(model)
 
-    torch.save(model.state_dict(), 'model.pt')
+    model = model(**dom_params)
+
+
+    #torch.save(model.state_dict(), 'model.pt')
 
     #model.edge_index = update_edge_data_with_perturb(model.edge_index, perturb)
     start_time = time.time()
@@ -208,11 +211,11 @@ def get_DOMINANT_eval_values(model, config, target_list, perturb, iteration = No
     ACC_DOM = accuracy(model.label.detach().cpu().numpy(), model.score)
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
 
-    model.load_state_dict(torch.load('model.pt'))
+    #model.load_state_dict(torch.load('model.pt'))
 
     return AS_DOM, AUC_DOM, ACC_DOM, target_nodes_as
 
-def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINANT_model_2, config, target_list, B, CPI = 1, print_stats = False):
+def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINANT_model_2, dom_params, config, target_list, B, CPI = 1, print_stats = False):
     """
         Parameters: 
         - model: The surrogate model
@@ -234,6 +237,10 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
         - perturb: List of the changed edges
         - edge_index: The edge_index of the poisoned graph, converted to torch format
     """
+
+
+
+
     triple_copy = triple.copy()
     # print(f'triple copy type: {type(triple_copy)}')
     triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
@@ -248,8 +255,8 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
     print(model.true_AS(triple_torch).data.detach().cpu().numpy())
     print("After AS")
     AS.append(model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
-    AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb)
-    AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb)
+    AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
+    AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
     CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
     CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
     AS_DOM[0].append(AS_DOM_temp_1)
@@ -328,8 +335,8 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
             # Get and save updated scores and values
             true_AScore = model.true_AS(triple_torch).data.detach().cpu().numpy()[0] 
             AS.append(true_AScore)
-            AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb)
-            AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb)
+            AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
+            AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
 
 
             CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
