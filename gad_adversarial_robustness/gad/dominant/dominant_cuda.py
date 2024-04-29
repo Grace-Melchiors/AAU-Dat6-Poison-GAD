@@ -6,7 +6,7 @@ import scipy.sparse as sp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.utils import to_dense_adj
+from torch_geometric.utils import to_dense_adj, to_edge_index, add_self_loops
 from torch_geometric.data import Data
 from sklearn.metrics import roc_auc_score
 from typing import Tuple
@@ -82,17 +82,25 @@ class Dominant(nn.Module):
         struct_reconstructed = self.struct_decoder(x, edge_index)
         return struct_reconstructed, x_hat
 
-    def fit(self, config: dict, verbose: bool = False, top_k: int = 10):
+    def fit(self, config: dict, new_edge_index, verbose: bool = False, top_k: int = 10):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['model']['lr'])
-
+        self.edge_index = new_edge_index
+        self.edge_index = add_self_loops(self.edge_index)[0].to(self.device)
+        
         for epoch in range(config['model']['epochs']):
+            #adj, adj_label = prepare_adj_and_adj_label(edge_index=self.edge_index)
+            #edge_index = to_edge_index(torch.sparse_coo_tensor(adj.nonzero(), adj.data, adj.shape))[0].to(self.device)
+            #adj_label = torch.tensor(adj_label).to(self.device)
+            #print(edge_index[0].shape)
+            #adj_label = torch.tensor(adj_label).to(self.device)
+
             self.train()
             optimizer.zero_grad()
             # TODO: Normalize for every forward step
             A_hat, X_hat = self.forward(self.attrs, self.edge_index)
-            self.adj_label = to_dense_adj(self.edge_index)[0]
+            #self.adj_label = to_dense_adj(self.edge_index)[0]
             #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
-            loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
+            loss, struct_loss, feat_loss = loss_func(to_dense_adj(self.edge_index)[0], A_hat, self.attrs, X_hat, config['model']['alpha'])
             loss = torch.mean(loss)
             loss.backward()
             optimizer.step()
@@ -103,7 +111,7 @@ class Dominant(nn.Module):
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.edge_index)
-                loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
+                loss, struct_loss, feat_loss = loss_func(to_dense_adj(self.edge_index)[0].to(self.device), A_hat, self.attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
                 print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
 
@@ -143,6 +151,17 @@ def loss_func(adj: torch.Tensor, A_hat: torch.Tensor, attrs: torch.Tensor, X_hat
     cost = alpha * attribute_reconstruction_errors + (1 - alpha) * structure_reconstruction_errors
     return cost, structure_cost, attribute_cost
 
+def prepare_adj_and_adj_label(edge_index):
+    adj = to_dense_adj(edge_index)[0].detach().cpu().numpy()
+    adj_norm = normalize_adj(adj + sp.eye(adj.shape[0]))
+    
+    #print("DENSE")
+    #print(type(adj_norm))
+    edge_index = to_edge_index(torch.sparse_coo_tensor(adj_norm.nonzero(), adj_norm.data, adj_norm.shape))
+    #print(edge_index)
+    #print(adj_norm)
+    adj = adj + np.eye(adj.shape[0])
+    return adj_norm, adj # adj and adj label
 
 def load_anomaly_detection_dataset(dataset: Data, datadir: str = 'data') -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     edge_index = dataset.edge_index
@@ -172,7 +191,8 @@ if __name__ == '__main__':
 
     from torch_geometric.utils import to_torch_sparse_tensor, dense_to_sparse
     #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
-    edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
+    edge_index = dataset.edge_index.to(config['model']['device'])
+    #edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
 

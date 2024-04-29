@@ -4,20 +4,15 @@ from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes, lo
 from gad_adversarial_robustness.poison.greedy import greedy_attack_with_statistics, greedy_attack_with_statistics_multi
 import os
 import torch
-import torch.nn as nn
 import numpy as np
-from torch.autograd import Variable
-from torch.optim.sgd import SGD
 from torch.optim.optimizer import required
 import torch
 import numpy as np
 import scipy.sparse as sp
 #from pygod.detector import DOMINANT
 from gad_adversarial_robustness.utils.graph_utils import prepare_graph, adj_matrix_sparse_coo_to_dense
-from gad_adversarial_robustness.utils.experiment_results import Experiment
 import torch
 from pygod.utils import load_data
-import copy
 from typing import Tuple, List, Any
 import yaml
 import os
@@ -25,21 +20,18 @@ from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_sage import Dominant as DominantAgg
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.data import Data
-from torch_geometric.utils import to_torch_sparse_tensor
 from gad_adversarial_robustness.poison.greedy import multiple_AS
 from gad_adversarial_robustness.utils.graph_utils import get_n_anomaly_indexes
-from sklearn.metrics import (
-    roc_auc_score,
-    average_precision_score,
-    f1_score
-)
+
 from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
 
 USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
+USE_FIRST_K_TO_SELECT_TOP_K_TARGET = False
 
-TOP_K = 25
-SAMPLE_MODE = 'lowest' # 'top', 'lowest' or 'normal'
+TOP_K = 4
+
+SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
 
 DATASET_NAME = 'inj_cora'
 print(DATASET_NAME)
@@ -67,25 +59,15 @@ if GRAPH_PARTITION_SIZE is not None:
     subset = torch.randperm(dataset.num_nodes)[:GRAPH_PARTITION_SIZE]
     dataset = dataset.subgraph(subset)
 
-print("TEST")
-print(dataset.num_nodes)
-
-
 adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
 adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
-edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
-#edge_index = dataset.edge_index.to(config['model']['device'])
+#edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
+edge_index = dataset.edge_index.to(config['model']['device'])
 label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
 attrs = dataset.x.to(config['model']['device'])
 #sparse_adj = to_torch_sparse_tensor(edge_index)
 
 y_binary: List[int] = dataset.y.bool()
-print(y_binary)
-
-anomaly_list = get_n_anomaly_indexes(y_binary, TOP_K)
-#anomaly_list = np.where(y_binary == True)[0]  # Used for list for which nodes to hide
-
-print(anomaly_list)
 
 _, adj, _ = prepare_graph(dataset)
 
@@ -95,6 +77,7 @@ amount_of_nodes = dataset.num_nodes
 # Each triple represents an edge modification in the form of (node1, node2, edge_label).
 
 dense_adj = adj.to_dense()  #Fill in zeroes where there are no edges
+A = np.array(dense_adj)
 
 
 print("Create poison compatible adjacency matrix...")
@@ -109,14 +92,11 @@ triple = np.array(triple)
 
 # %%
 
-##
-## DOMINANT UNMODIFIED
-##
 print("Before poison:")
 testingModel = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                 device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
 testingModel.to(config['model']['device'])
-testingModel.fit(config, verbose=False, top_k=TOP_K)
+testingModel.fit(config, new_edge_index=edge_index, verbose=False, top_k=TOP_K)
 
 target_list = []
 if USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET:
@@ -132,9 +112,9 @@ elif USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET:
     print("NOT ALL:")
     target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True)
     print(f'Target list: {target_list}')
-else:
+elif USE_FIRST_K_TO_SELECT_TOP_K_TARGET:
+    anomaly_list = get_n_anomaly_indexes(y_binary, TOP_K)
     target_list = anomaly_list
-
 
 print("Making model...")
 model = multiple_AS(target_lst = target_list, n_node = amount_of_nodes, device = config['model']['device'])
@@ -144,7 +124,7 @@ for target in target_list:
 
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 2
+budget = TOP_K * 5
 
 print("Starting attack...")
 """
@@ -238,8 +218,8 @@ def print_values_not_in_bigger_array(small_array, bigger_array):
     else:
         print("All values in the small array are present in the bigger array.")
 
-target_list = np.array(testingModel.top_k_AS)
-print_values_not_in_bigger_array(target_list, anomaly_list)
+#target_list = np.array(testingModel.top_k_AS)
+#print_values_not_in_bigger_array(target_list, anomaly_list)
 
 
 # %%
