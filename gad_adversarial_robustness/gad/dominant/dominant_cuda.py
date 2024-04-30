@@ -74,7 +74,15 @@ class Dominant(nn.Module):
         self.attrs = attrs.to(self.device).requires_grad_(True)
         self.label = label
         self.top_k_AS = None
+        self.top_k_AS_scores = None
         self.score = None
+
+        # related to graphing - unique same as in jaccard dominant version
+        self.feature_loss_arr = []
+        self.structure_loss_arr =[]
+        self.loss_arr = []
+        self.aucroc_arr = []
+        self.aucroc_norm_arr = []
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.shared_encoder(x, edge_index)
@@ -98,16 +106,29 @@ class Dominant(nn.Module):
             optimizer.step()
             if verbose:
                 print(f"Epoch: {epoch:04d}, train_loss={loss.item():.5f}, "
-                    f"train/struct_loss={struct_loss.item():.5f}, train/feat_loss={feat_loss.item():.5f}")
+                    f"train/struct_loss={struct_loss.item():.5f}, train/feat_loss={feat_loss.item():.5f}")    
 
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
                 A_hat, X_hat = self.forward(self.attrs, self.edge_index)
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
+                
                 self.score = loss.detach().cpu().numpy()
+                
                 # print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
                 # print(f"Epoch: {epoch:04d}, roc-auc: {roc_auc_score(self.label, self.score)}") ###################################### Experiencing problem here !!!!!!!!!!!!!!
-                print(f"Epoch: {epoch:04d}, roc-auc: {roc_auc_score(self.label, self.score.reshape(-1, 1))}")
+                aucroc_normalized = roc_auc_score(self.label, 1 / (1 + np.exp(-self.score.reshape(-1, 1))))
+
+                aucroc= roc_auc_score(self.label, self.score.reshape(-1, 1))
+
+                print(f"Epoch: {epoch:04d}, roc-auc: {aucroc}")
+
+                # ------------ retrieve plotting values from each epoch
+                self.feature_loss_arr.append(feat_loss.detach().cpu().numpy())
+                self.structure_loss_arr.append(struct_loss.detach().cpu().numpy())
+                self.loss_arr.append(loss.detach().cpu().numpy())
+                self.aucroc_arr.append(aucroc)
+                self.aucroc_norm_arr.append(aucroc_normalized)
 
                 # Identify and store the IDs of the nodes with the top K highest anomaly scores
                 if top_k is not None:
