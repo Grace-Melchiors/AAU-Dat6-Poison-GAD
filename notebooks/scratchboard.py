@@ -11,7 +11,35 @@ import torch_sparse as sp
 from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from gad_adversarial_robustness.poison.greedy import update_edge_index
-from torch_geometric.utils import contains_self_loops, add_self_loops, add_remaining_self_loops
+from torch_geometric.utils import contains_self_loops, add_self_loops, add_remaining_self_loops, is_undirected, to_undirected
+
+def update_edge_index(edge_index, changes, device):
+    updated_edge_index = edge_index.clone().to(device)
+    
+    for change in changes:
+        source, target, weight = change
+        
+        if weight == 1.0:  # Add edge
+            new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device=device)
+            updated_edge_index = torch.cat([updated_edge_index, new_edge], dim=1)
+        elif weight == 0:  # Remove edge
+            mask = ~(((updated_edge_index[0] == source) & (updated_edge_index[1] == target)) | ((updated_edge_index[0] == target) & (updated_edge_index[1] == source)))
+            updated_edge_index = updated_edge_index[:, mask]
+
+    return updated_edge_index
+
+changes = [
+    [2, 3, 0],
+    [2, 6, 1]
+]
+edge_index_lol = torch.tensor([[2, 3, 4, 5, 6], [3, 2, 5, 4, 7]])
+#Make undirected: 
+print(to_undirected(edge_index_lol))
+
+edge_index_lol = update_edge_index(edge_index_lol, changes, 'cpu')
+print(edge_index_lol)
+
+
 
 script_dir = os.path.abspath('')
 yaml_path = os.path.join(script_dir, '..',  'configs', 'dominant_config.yaml')
@@ -27,9 +55,16 @@ adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['
 adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
 #attrs = torch.FloatTensor(attrs)
 print(dataset.edge_index.shape)
+
+print("DATASET: INJ CORA")
+print(f"Has self-loops: {contains_self_loops(dataset.edge_index)}")
+print(f"Is undirected: {is_undirected(dataset.edge_index)}")
+
 print(f'Contains: {contains_self_loops(dataset.edge_index)}')
 edge_index = add_self_loops(dataset.edge_index)[0]
 print(edge_index.shape)
+
+
 
 def normalize_edge_index(edge_index: torch.Tensor) -> torch.Tensor:
     row_sum = torch.sum(edge_index, dim=1)
@@ -56,6 +91,7 @@ model.to(config['model']['device'])
 model.fit(config, verbose=False)
 edge_index_test = to_dense_adj(edge_index.to(config['model']['device']))[0]
 print(edge_index_test)
+
 
 
 valid_indices = torch.where(label == 1)[0]

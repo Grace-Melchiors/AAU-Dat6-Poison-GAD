@@ -1,5 +1,5 @@
 # %% 
-from torch_geometric.utils import dense_to_sparse
+from torch_geometric.utils import dense_to_sparse, to_undirected, to_dense_adj
 from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes, load_injected_dataset, get_anomaly_indexes, get_anomalies_with_label_1
 from gad_adversarial_robustness.poison.greedy import greedy_attack_with_statistics, greedy_attack_with_statistics_multi
 import os
@@ -24,12 +24,14 @@ from gad_adversarial_robustness.poison.greedy import multiple_AS
 from gad_adversarial_robustness.utils.graph_utils import get_n_anomaly_indexes
 
 from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
+from pygod.detector import DOMINANT
+
 
 USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
 USE_FIRST_K_TO_SELECT_TOP_K_TARGET = False
 
-TOP_K = 4
+TOP_K = 30
 
 SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
 
@@ -62,7 +64,7 @@ if GRAPH_PARTITION_SIZE is not None:
 adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
 adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
 #edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
-edge_index = dataset.edge_index.to(config['model']['device'])
+edge_index = to_undirected(dataset.edge_index).to(config['model']['device'])
 label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
 attrs = dataset.x.to(config['model']['device'])
 #sparse_adj = to_torch_sparse_tensor(edge_index)
@@ -71,13 +73,15 @@ y_binary: List[int] = dataset.y.bool()
 
 _, adj, _ = prepare_graph(dataset)
 
+dense_adj = to_dense_adj(edge_index)[0].detach().cpu().numpy()
+
 amount_of_nodes = dataset.num_nodes
 
 # 'triple' is a list that will store the perturbed triples during the poisoning process.
 # Each triple represents an edge modification in the form of (node1, node2, edge_label).
 
-dense_adj = adj.to_dense()  #Fill in zeroes where there are no edges
-A = np.array(dense_adj)
+#dense_adj = adj.to_dense()  #Fill in zeroes where there are no edges
+#A = dense_adj.detach().cpu().numpy()
 
 
 print("Create poison compatible adjacency matrix...")
@@ -86,6 +90,7 @@ for i in range(amount_of_nodes):
     for j in range(i + 1, amount_of_nodes):
         triple.append([i, j, dense_adj[i,j]])  #Fill with 0, then insert actual after
 
+print(type(triple))
 triple = np.array(triple)
 
 
@@ -96,7 +101,7 @@ print("Before poison:")
 testingModel = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                 device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
 testingModel.to(config['model']['device'])
-testingModel.fit(config, new_edge_index=edge_index, verbose=False, top_k=TOP_K)
+testingModel.fit(config, new_edge_index=edge_index, attrs=attrs, verbose=False, top_k=TOP_K)
 
 target_list = []
 if USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET:
@@ -124,7 +129,7 @@ for target in target_list:
 
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 5
+budget = TOP_K * 2
 
 print("Starting attack...")
 """

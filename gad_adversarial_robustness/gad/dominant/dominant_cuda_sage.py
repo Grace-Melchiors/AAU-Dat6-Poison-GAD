@@ -91,9 +91,9 @@ class Dominant(nn.Module):
         self.attr_decoder = AttributeDecoder(feat_size, hidden_size, dropout)
         self.struct_decoder = StructureDecoder(hidden_size, dropout)
 
-        self.edge_index = edge_index.to(self.device)
-        self.adj_label = adj_label.to(self.device).requires_grad_(True)
-        self.attrs = attrs.to(self.device).requires_grad_(True)
+        #self.edge_index = edge_index.to(self.device)
+        #self.adj_label = adj_label.to(self.device).requires_grad_(True)
+        #self.attrs = attrs.to(self.device).requires_grad_(True)
         self.label = label
         self.top_k_AS = None
         self.score = None
@@ -104,10 +104,11 @@ class Dominant(nn.Module):
         struct_reconstructed = self.struct_decoder(x, edge_index)
         return struct_reconstructed, x_hat
 
-    def fit(self, config: dict, new_edge_index, verbose: bool = False, top_k: int = 10):
+    def fit(self, config: dict, new_edge_index, attrs, verbose: bool = False, top_k: int = 10):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['model']['lr'])
-        self.edge_index = new_edge_index
-        self.edge_index = add_self_loops(self.edge_index)[0].to(self.device)
+        edge_index = new_edge_index
+        edge_index = add_self_loops(edge_index)[0].to(self.device)
+        print("Fitting on edge index of shape: ", edge_index.shape)
         
         for epoch in range(config['model']['epochs']):
             #adj, adj_label = prepare_adj_and_adj_label(edge_index=self.edge_index)
@@ -118,10 +119,10 @@ class Dominant(nn.Module):
 
             self.train()
             optimizer.zero_grad()
-            A_hat, X_hat = self.forward(self.attrs, self.edge_index)
+            A_hat, X_hat = self.forward(attrs, edge_index)
             #self.adj_label = to_dense_adj(self.edge_index)[0]
             #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
-            loss, struct_loss, feat_loss = loss_func(to_dense_adj(self.edge_index)[0].to(self.device), A_hat, self.attrs, X_hat, config['model']['alpha'])
+            loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
             loss = torch.mean(loss)
             loss.backward()
             optimizer.step()
@@ -131,27 +132,12 @@ class Dominant(nn.Module):
 
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
-                A_hat, X_hat = self.forward(self.attrs, self.edge_index)
-                loss, struct_loss, feat_loss = loss_func(to_dense_adj(self.edge_index)[0].to(self.device), A_hat, self.attrs, X_hat, config['model']['alpha'])
+                A_hat, X_hat = self.forward(attrs, edge_index)
+                loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
                 print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
 
-                # Identify and store the IDs of the nodes with the top K highest anomaly scores
-                if top_k is not None:
-                    # Convert the anomaly scores to a PyTorch tensor
-                    scores_tensor = torch.tensor(self.score)
-                    # Use torch.topk to find the top K scores and their indices
-                    topk_scores, topk_indices = torch.topk(scores_tensor, top_k, largest=True)
-                    # Convert the indices and scores to lists and store them
-                    top_k_AS_indices = topk_indices.tolist()
-                    top_k_AS_scores = topk_scores.tolist()
-                    self.top_k_AS = top_k_AS_indices
-                    # Print the node IDs and their corresponding anomaly scores
-                    print(f"Top {top_k} highest anomaly scores' node IDs and scores:")
-                    #for idx, score in zip(top_k_AS_indices, top_k_AS_scores):
-                    #    print(f"Node ID: {idx}, Anomaly Score: {score}")
-
-
+                
 
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
@@ -226,4 +212,4 @@ if __name__ == '__main__':
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                      device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
     model.to(config['model']['device'])
-    model.fit(config, verbose=True)
+    model.fit(config, new_edge_index=edge_index, attrs=attrs, verbose=True)

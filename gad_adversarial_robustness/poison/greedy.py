@@ -159,20 +159,22 @@ def update_edge_data_with_perturb(edge_data, perturb):
     return edge_data
 
 
+
 def update_edge_index(edge_index, changes, device):
     updated_edge_index = edge_index.clone().to(device)
     
     for change in changes:
         source, target, weight = change
         
-        if weight == 1.0:  # Add edge
-            new_edge = torch.tensor([[source], [target]], dtype=torch.long, device=device)
+        if weight == 0:  # Add edge
+            new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device=device)
             updated_edge_index = torch.cat([updated_edge_index, new_edge], dim=1)
-        elif weight == 0:  # Remove edge
-            mask = ((updated_edge_index[0] != source) | (updated_edge_index[1] != target)) & ((updated_edge_index[0] != target) | (updated_edge_index[1] != source))
+        elif weight == 1.0:  # Remove edge
+            mask = ~(((updated_edge_index[0] == source) & (updated_edge_index[1] == target)) | ((updated_edge_index[0] == target) & (updated_edge_index[1] == source)))
             updated_edge_index = updated_edge_index[:, mask]
 
     return updated_edge_index
+
 
 def target_node_mask(target_list, tuple_list):
     """
@@ -199,34 +201,35 @@ def get_DOMINANT_eval_values(model_obj, config, target_list, perturb, dom_params
 
     model = model_obj(**dom_params)
 
-    deepcopy_model = deepcopy(model)
-    torch.save(deepcopy_model.state_dict(), 'model.pt')
+    #deepcopy_model = deepcopy(model)
+    #torch.save(deepcopy_model.state_dict(), 'model.pt')
 
     #model.edge_index = update_edge_data_with_perturb(model.edge_index, perturb)
-    start_time = time.time()
+    #start_time = time.time()
     
-    copy = model.edge_index
-    new_edge_index = update_edge_index(model.edge_index, perturb, config['model']['device']).to(config['model']['device'])
-    model.edge_index = new_edge_index 
-    print(copy.shape, model.edge_index.shape, perturb)
+    #copy = model.edge_index
+    new_edge_index = update_edge_index(dom_params['edge_index'], perturb, config['model']['device']).to(config['model']['device'])
+    #model.edge_index = new_edge_index 
+    #print(copy.shape, model.edge_index.shape, perturb)
+    print(f"PERTURBATIONS: {perturb}")
     #diff = model.edge_index - copy
     #print(f'CHANGE MADE: {diff}')
-    end_time = time.time()
-    runtime = end_time - start_time
-    print(f'runtime: {runtime} seconds')
+    #end_time = time.time()
+    #runtime = end_time - start_time
+    #print(f'runtime: {runtime} seconds')
 
 
     
     model.to(config['model']['device'])
-    model.fit(config, verbose=False, new_edge_index = new_edge_index)
+    model.fit(config, verbose=False, new_edge_index = new_edge_index, attrs = dom_params['attrs'])
 
 
     target_nodes_as = target_node_mask(target_list=target_list, tuple_list=model.score)
-    print("===========================")
-    print("All target nodes as:")
-    for node in target_nodes_as:
-        print(node)
-    print("===========================")
+    #print("===========================")
+    #print("All target nodes as:")
+    #for node in target_nodes_as:
+    #    print(node)
+    #print("===========================")
     AS_DOM = np.sum(target_nodes_as)
     #AS_DOM = np.sum(model.score)
     AUC_DOM = roc_auc_score(model.label.detach().cpu().numpy(), model.score)
@@ -234,7 +237,7 @@ def get_DOMINANT_eval_values(model_obj, config, target_list, perturb, dom_params
     ACC_DOM = accuracy(model.label.detach().cpu().numpy(), model.score)
     #ACC_DOM = roc_auc_score(target_node_mask(model.label, target_list), target_node_mask(model.score, target_list))
 
-    model.load_state_dict(torch.load('model.pt'))
+    #model.load_state_dict(torch.load('model.pt'))
 
     return AS_DOM, AUC_DOM, ACC_DOM, target_nodes_as
 
@@ -338,7 +341,7 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
 
         # Update representation of adjacency matrix (triple_torch)
         triple_copy[target_index,2] -= np.sign(target_grad[2])
-        triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True)
+        #triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True)
 
         # Add perturb to list of perturbs
         perturb.append([int(target_grad[0]),int(target_grad[1]), int(0 < target_grad[2])]) 
@@ -348,7 +351,6 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
         AS.append(true_AScore)
         AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
         AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
-
 
         CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
         CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
