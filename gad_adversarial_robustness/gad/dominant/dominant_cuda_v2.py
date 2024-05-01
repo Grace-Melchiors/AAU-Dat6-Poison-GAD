@@ -82,14 +82,11 @@ class Dominant(nn.Module):
         self.top_k_AS = None
         self.top_k_AS_scores = None
         self.score = None
+        self.contamination = 0.1
+        self.threshold_ = None
 
-        # related to graphing - unique same as in jaccard dominant version
-        self.feature_loss_arr = []
-        self.structure_loss_arr =[]
-        self.loss_arr = []
-        self.aucroc_arr = []
-        self.aucroc_norm_arr = []
 
+    
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.shared_encoder(x, edge_index)
         x_hat = self.attr_decoder(x, edge_index)
@@ -128,24 +125,15 @@ class Dominant(nn.Module):
                 self.eval()
                 A_hat, X_hat = self.forward(attrs, edge_index)
                 loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
-                
                 self.score = loss.detach().cpu().numpy()
-                
-                # print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
-                # print(f"Epoch: {epoch:04d}, roc-auc: {roc_auc_score(self.label, self.score)}") ###################################### Experiencing problem here !!!!!!!!!!!!!!
-                aucroc_normalized = roc_auc_score(self.label, 1 / (1 + np.exp(-self.score.reshape(-1, 1))))
+                #self.threshold_ = np.percentile(self.score, 100 * (1 - self.contamination))
+                #pred = (self.score > self.threshold_)
+                #print(pred)
+                #print(self.label[33], self.label[65], self.label[88], self.label[89], self.label[90])
 
-                aucroc= roc_auc_score(self.label, self.score.reshape(-1, 1))
 
-                print(f"Epoch: {epoch:04d}, roc-auc: {aucroc}")
-
-                # ------------ retrieve plotting values from each epoch
-                self.feature_loss_arr.append(feat_loss.detach().cpu().numpy())
-                self.structure_loss_arr.append(struct_loss.detach().cpu().numpy())
-                self.loss_arr.append(loss.detach().cpu().numpy())
-                self.aucroc_arr.append(aucroc)
-                self.aucroc_norm_arr.append(aucroc_normalized)
-
+                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+              
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
     adj = sp.coo_matrix(adj)
