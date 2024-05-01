@@ -20,7 +20,7 @@ from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
 from torch_geometric.utils import from_scipy_sparse_matrix, add_remaining_self_loops
 
-def drop_dissimilar_edges(features, adj, threshold: int = 0):
+def drop_dissimilar_edges(features, adj, threshold: int = 0.02):
     if not sp.issparse(adj):
         adj = sp.csr_matrix(adj)
     modified_adj = adj.copy().tolil()
@@ -48,7 +48,7 @@ def _jaccard_similarity(a, b):
     J = intersection * 1.0 / (a.count_nonzero() + b.count_nonzero() - intersection)
     return J
 
-def get_jaccard(adjacency_matrix: torch.Tensor, features: torch.Tensor, threshold: int = 0.01):
+def get_jaccard(adjacency_matrix: torch.Tensor, features: torch.Tensor, threshold: int = 0.02):
     """Jaccard similarity edge filtering as proposed in Huijun Wu, Chen Wang, Yuriy Tyshetskiy, Andrew Docherty, Kai Lu,
     and Liming Zhu.  Adversarial examples for graph data: Deep insights into attack and defense.
 
@@ -211,7 +211,7 @@ class Dominant(nn.Module):
             return self._adj_preped
 
         # set a timer and end of timer and calculate difference
-        start = time.perf_counter()
+        #start = time.perf_counter()
         adj = get_jaccard(
             torch.sparse.FloatTensor(
                 edge_idx,
@@ -219,7 +219,7 @@ class Dominant(nn.Module):
             ),
             x
         ).coalesce()
-        end = time.perf_counter()
+        #end = time.perf_counter()
         edge_idx, edge_weight = adj.indices(), adj.values()
         del adj
 
@@ -230,8 +230,8 @@ class Dominant(nn.Module):
             print("CACHING")
             self._adj_preped = (edge_idx, edge_weight)
         
-        elapsed = end - start
-        print(f"Time difference: {elapsed:0.4f} seconds")
+        #elapsed = end - start
+        #print(f"Time difference: {elapsed:0.4f} seconds")
         return edge_idx, edge_weight
                
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:

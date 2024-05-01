@@ -18,6 +18,7 @@ import yaml
 import os
 from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant 
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_sage import Dominant as DominantAgg
+from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess import Dominant as DominantPP
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.data import Data
 from gad_adversarial_robustness.poison.greedy import multiple_AS
@@ -31,7 +32,7 @@ USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
 USE_FIRST_K_TO_SELECT_TOP_K_TARGET = False
 
-TOP_K = 30
+TOP_K = 10
 
 SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
 
@@ -164,7 +165,7 @@ dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden
 
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1 = greedy_attack_with_statistics_multi(
-    model, triple, Dominant, DominantAgg, dom_params, config, target_list, budget, print_stats = True)
+    model, triple, Dominant, DominantAgg, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_3=DominantPP)
 
 # -------------
 
@@ -174,7 +175,7 @@ import matplotlib.pyplot as plt
 
 
 
-def plot_scores(scores1, scores2, title='AUC Scores by Budget', xlabel='Budget', ylabel='AUC Score'):
+def plot_scores(scores1, scores2, title='AUC Scores by Budget', xlabel='Budget', ylabel='AUC Score', scores3=None):
     """
     Plots a list of scores against their corresponding budgets.
 
@@ -191,6 +192,8 @@ def plot_scores(scores1, scores2, title='AUC Scores by Budget', xlabel='Budget',
     #plt.plot(budgets, scores, marker='o', linestyle='-', color='b')  # Plotting the scores
     plt.plot(budgets, scores1, marker='o', linestyle='-', color='b', label='Unmodified DOMINANT')  # Plotting the first set of scores
     plt.plot(budgets, scores2, marker='o', linestyle='-', color='r', label='DOMINANT w/ soft medoid aggregation')  # Plotting the second set of scores
+    if scores3 is not None:
+        plt.plot(budgets, scores3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Jaccard')  # Plotting the third set of scores
 
     # Adding some flair to the plot
     plt.title(title)  # Title of the plot
@@ -207,10 +210,70 @@ def plot_scores(scores1, scores2, title='AUC Scores by Budget', xlabel='Budget',
     plt.show()
 
 
+
+
+
 #plot_scores(AUC_DOM2, "DOMINANT AUC-Score by Budget")
 #plot_scores(AS_DOM2, "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
 #print(AS_DOM2)
 
+def plot_score_percentage_change(scores1, scores2, title='Percentage Change of Scores', xlabel='Budget', ylabel='Percentage Change', scores3=None, scores4=None):
+    """
+    Plots the percentage change of scores compared to the first set of scores.
+
+    Parameters:
+    - scores1: List of scores for the baseline.
+    - scores2: List of scores to compare against the baseline.
+    - title: Title of the plot.
+    - xlabel: Label for the X-axis.
+    - ylabel: Label for the Y-axis.
+    - scores3: Optional third set of scores to compare against the baseline.
+    """
+    def normalize_scores(scores):
+        max_score = max(scores)
+        return [score / max_score for score in scores]
+
+    def calculate_percentage_changes(scores, baseline):
+        return [(score - baseline) / baseline * 100 for score in scores]
+
+    normalized_scores1 = normalize_scores(scores1)
+    normalized_scores2 = normalize_scores(scores2)
+    if scores3 is not None:
+        normalized_scores3 = normalize_scores(scores3)
+    if scores4 is not None:
+        normalized_scores4 = normalize_scores(scores4)
+
+    percentage_changes1 = calculate_percentage_changes(normalized_scores1, normalized_scores1[0])
+    percentage_changes2 = calculate_percentage_changes(normalized_scores2, normalized_scores1[0])
+    if scores3 is not None:
+        percentage_changes3 = calculate_percentage_changes(normalized_scores3, normalized_scores1[0])
+    if scores4 is not None:
+        percentage_changes4 = calculate_percentage_changes(normalized_scores4, normalized_scores1[0])
+
+    budgets = range(0, len(scores1))
+
+    # Creating the plot
+    plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
+    plt.plot(budgets, percentage_changes1, marker='o', linestyle='-', color='b', label='Unmodified DOMINANT')
+    plt.plot(budgets, percentage_changes2, marker='o', linestyle='-', color='r', label='DOMINANT w/ soft medoid aggregation')
+    if scores3 is not None:
+        plt.plot(budgets, percentage_changes3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Jaccard')
+    if scores4 is not None:
+        plt.plot(budgets, percentage_changes4, marker='o', linestyle='-', color='y', label='OddBall')
+
+    # Adding some flair to the plot
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.grid(True)
+
+    # Set integer ticks on the X-axis
+    plt.xticks(budgets)
+
+    plt.legend()
+
+    # Display the plot
+    plt.show()
 
 # %%
 
@@ -257,7 +320,8 @@ def plot_anomaly_scores(anomaly_scores, model_name):
     plt.show()
 
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[0], "Unmodified DOMINANT")
-plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "Modified DOMINANT")
+plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "DOMINANT Soft Medoid")
+plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
 
 # %%
 
@@ -265,6 +329,14 @@ plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "Modified DOMINANT")
 
 #AUC_DOM3 = [0.8164340495122089, 0.8177578525912143, 0.8156445609879884, 0.816068911069757, 0.8151440816556703, 0.8127586984717758, 0.8129983646309142, 0.8126825692212261, 0.8127192240455648, 0.8119692099475553, 0.8119748491512998, 0.8100039474426212, 0.8085321152653245, 0.8071307731348334, 0.8061157164608357, 0.80334686742232, 0.8060818812383691, 0.8045423786161394, 0.7949275362318842, 0.8053600631590819, 0.805606778322901, 0.8105241639880449, 0.8179101110923138, 0.8117098065753114, 0.8077835109682512, 0.8026758021767327, 0.8088958439068404, 0.7987678339818417, 0.8021358484182033, 0.7943565668527603, 0.7997730220492867]
 #AS_DOM3 = [42.31573, 42.33776, 42.281334, 42.30277, 42.298187, 42.23702, 42.300823, 42.258064, 42.257446, 42.23358, 42.220634, 42.19507, 42.051605, 41.77787, 41.589165, 41.44771, 41.76278, 41.445587, 41.004654, 41.27797, 40.98237, 41.213097, 41.853844, 40.96518, 40.93633, 40.30526, 40.568085, 39.9445, 40.14162, 39.60869, 39.669918]
-plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "AUC-Score by Budget", "Budget", "Anomaly Score")
-plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
+plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "AUC-Score by Budget", "Budget", "Anomaly Score", scores3=AUC_DOM_1[2])
+plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score", scores3=AS_DOM_1[2], scores4=AS_1)
+# %%
+
+# %%
+
+plot_score_percentage_change(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score % Change", scores3=AS_DOM_1[2], scores4=AS_1)
+# %%
+
+print(AS_1)
 # %%

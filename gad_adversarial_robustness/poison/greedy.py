@@ -241,7 +241,7 @@ def get_DOMINANT_eval_values(model_obj, config, target_list, perturb, dom_params
 
     return AS_DOM, AUC_DOM, ACC_DOM, target_nodes_as
 
-def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINANT_model_2, dom_params, config, target_list, B, CPI = 1, print_stats = False):
+def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINANT_model_2, dom_params, config, target_list, B, CPI = 1, print_stats = False, DOMINANT_model_3 = None):
     """
         Parameters: 
         - model: The surrogate model
@@ -268,22 +268,33 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
     # print(f'triple copy type: {type(triple_copy)}')
     triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
     AS = []
-    AS_DOM = [[], []]
-    AUC_DOM = [[], []]
-    ACC_DOM = [[], []]
-    CHANGE_IN_AS_TARGET_NODE_AS = [[], []]
+    AS_DOM = [[], [], []]
+    AUC_DOM = [[], [], []]
+    ACC_DOM = [[], [], []]
+    CHANGE_IN_AS_TARGET_NODE_AS = [[], [], []]
     perturb = []
     AS.append(model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
+
     AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
-    AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
+    AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2 = get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
+    AS_DOM_temp_3, AUC_DOM_temp_3, ACC_DOM_temp_3, target_nodes_as_3 = get_DOMINANT_eval_values(DOMINANT_model_3, config, target_list, perturb, dom_params)
+
     CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
     CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
+    CHANGE_IN_AS_TARGET_NODE_AS[2].append(target_nodes_as_3)
+
     AS_DOM[0].append(AS_DOM_temp_1)
     AS_DOM[1].append(AS_DOM_temp_2)
+    AS_DOM[2].append(AS_DOM_temp_3)
+
     AUC_DOM[0].append(AUC_DOM_temp_1)
     AUC_DOM[1].append(AUC_DOM_temp_2)
+    AUC_DOM[2].append(AUC_DOM_temp_3)
+
     ACC_DOM[0].append(ACC_DOM_temp_1)
     ACC_DOM[1].append(ACC_DOM_temp_2)
+    ACC_DOM[2].append(ACC_DOM_temp_3)
+
     if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
     
     #i = 0
@@ -351,21 +362,32 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
         AS.append(true_AScore)
         AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
         AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2= get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
+        AS_DOM_temp_3, AUC_DOM_temp_3, ACC_DOM_temp_3, target_nodes_as_3 = get_DOMINANT_eval_values(DOMINANT_model_3, config, target_list, perturb, dom_params)
 
         CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
         CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
+        CHANGE_IN_AS_TARGET_NODE_AS[2].append(target_nodes_as_3)
+
         AS_DOM[0].append(AS_DOM_temp_1)
         AS_DOM[1].append(AS_DOM_temp_2)
+        AS_DOM[2].append(AS_DOM_temp_3)
+
+
         AUC_DOM[0].append(AUC_DOM_temp_1)
         AUC_DOM[1].append(AUC_DOM_temp_2)
+        AUC_DOM[2].append(AUC_DOM_temp_3)
+
         ACC_DOM[0].append(ACC_DOM_temp_1)
         ACC_DOM[1].append(ACC_DOM_temp_2)
+        ACC_DOM[2].append(ACC_DOM_temp_3)
 
         if(print_stats): 
             print('First model: Iteration:', i, '--- Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_1, 
                                 '--- DOM AUC:', AUC_DOM_temp_1, '--- TARGET DOM ACC:', ACC_DOM_temp_1)
             print('Second model: Iteration:', i, '--- Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
                                 '--- DOM AUC:', AUC_DOM_temp_2, '--- TARGET DOM ACC:', ACC_DOM_temp_2)
+            print('Second model: Iteration:', i, '--- Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_3, 
+                                '--- DOM AUC:', AUC_DOM_temp_3, '--- TARGET DOM ACC:', ACC_DOM_temp_3)
     AS = np.array(AS)    
 
     edge_index = [] 
