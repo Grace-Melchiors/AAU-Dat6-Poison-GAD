@@ -14,6 +14,7 @@ from torch.nn.modules import Module
 from torch.nn import Parameter
 import math
 from torch_geometric.nn import GCNConv
+import torch_geometric.utils as pyg_utils
 
 from gad_adversarial_robustness.gad.GCN_Jaccard import GCNJaccard, to_tensor, is_sparse_tensor, normalize_adj, sparse_mx_to_torch_sparse_tensor, to_scipy, normalize_adj_tensor
 from tqdm import tqdm
@@ -107,8 +108,15 @@ class Dominant(nn.Module):
 
         if is_sparse_tensor(self.adj): # normalizing adj matrix: from line 176-182 (https://github.com/DSE-MSU/DeepRobust/blob/master/deeprobust/graph/defense/gcn.py)
             adj_norm = normalize_adj_tensor(self.adj, sparse=True)
+            adj_norm_dense = adj_norm.to_dense()
+
         else:
             adj_norm = normalize_adj_tensor(self.adj)
+
+        # Convert dense adjacency matrix (adj_norm) to sparse edge index
+        edge_index = pyg_utils.dense_to_sparse(adj_norm_dense)[0]
+        self.edge_index = edge_index
+
         ## !---------!---------!---------!---------!--------- ##!---------!---------!--------- ##
 
         for epoch in range(config['model']['epochs']):
