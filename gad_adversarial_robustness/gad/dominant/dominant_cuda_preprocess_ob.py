@@ -1,3 +1,5 @@
+from collections import Counter
+import csv
 import os
 import time
 from pygod.detector import DOMINANT
@@ -22,7 +24,7 @@ from torch_geometric.utils import from_scipy_sparse_matrix, add_remaining_self_l
 from torch_geometric.utils import k_hop_subgraph
 
 
-from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
+from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS, get_OddBall_AS_simple
 
 def drop_dissimilar_edges(features, adj, threshold: int = 0.1):
     if not sp.issparse(adj):
@@ -221,9 +223,10 @@ class Dominant(nn.Module):
         edge_weight = None
         edge_index = edge_idx
         prior_shape = edge_index.shape
-        print(f'Label {label}')
+        #print(f'Label {label}')
         
-        SAVED = True
+        num_nodes = x.size(0)
+        SAVED = False
 
         #if self.training and self._adj_preped is not None:
         if self._adj_preped is not None:
@@ -231,19 +234,18 @@ class Dominant(nn.Module):
             
 
         if SAVED == False:
-            anomaly_scores = get_OddBall_AS(data=dataset, device=config['model']['device'])
+            anomaly_scores = get_OddBall_AS_simple(edge_index, num_nodes, device=config['model']['device'])
             anomaly_scores = torch.Tensor(anomaly_scores).to(config['model']['device'])
             torch.save(anomaly_scores, 'anomaly_scores.pt')
         elif SAVED == True:
             anomaly_scores = torch.load('anomaly_scores.pt')
 
-
+        
         AVG_AS = False
-        KTH_AS = 30
+        KTH_AS = 25
         if AVG_AS:
             average_anomaly_score = torch.mean(anomaly_scores)
         elif KTH_AS is not None:
-            num_nodes = x.size(0)
             percentile_threshold = KTH_AS
             k = int(percentile_threshold * num_nodes / 100)
             kth_threshold_score, _ = torch.kthvalue(anomaly_scores, k)
@@ -252,12 +254,12 @@ class Dominant(nn.Module):
         deg = degree(edge_idx[0])
         non_zero_tensor = deg[deg != 0]
         # Get mean of sum of nonzero
-        average_degree = non_zero_tensor.mean().item()
+        average_degree = non_zero_tensor.mean().item() 
         #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
         # Currently with K = 30, we get 100 indexes.
         # TODO: To prove concept, check how many of the nodes with these indexes have connections that are anomalies.
 
-        THRESHOLD = 0.6
+        THRESHOLD = 0.65
 
 
 
@@ -273,8 +275,14 @@ class Dominant(nn.Module):
         print(f'Shape of selected nodes: {selected_nodes.shape}')
         true_indices = selected_nodes.nonzero(as_tuple=False).squeeze()
         
-        print("LOL")
-        print(true_indices, true_indices.shape)
+        count1 = 0
+        count2 = 0
+        count3 = 0
+        # init dict
+        added_edges = []
+
+        #print("LOL")
+        #print(true_indices, true_indices.shape)
         num_hops = 1
         for index in true_indices.cpu().numpy():
             subset, _, _, edge_mask = k_hop_subgraph(int(index), num_hops, edge_idx)
@@ -285,7 +293,7 @@ class Dominant(nn.Module):
             normalized_scores = torch.sigmoid(neighbor_anomaly_scores)
             print("Normalized scores")
             print(normalized_scores)
-            print(normalized_scores.shape)
+            #print(normalized_scores.shape)
             #neighborhood_similarity = torch.sparse.sum(normalized_scores, dim=1)
             print("Below threshold")
             below_threshold_indices = torch.nonzero(normalized_scores < THRESHOLD)
@@ -301,6 +309,17 @@ class Dominant(nn.Module):
             # Remove from edge_index
             node1 = index
             for node2 in masked_indices_of_nodes_in_1_hop_below_threshold:
+                if label[node2] == 1:
+                    count1+=1
+                    print("REMOVED EDGE TO ANOMALOUS NODE")
+                    added_edges.append(node2)
+                elif label[node1] == 1:
+                    count2 +=1
+                    print("REMOVED EDGE FROM ANOMALOUS NODE")
+                    added_edges.append(node1)
+                else:
+                    count3 +=1
+
                 edges_to_remove = ((edge_index[0] == node1) & (edge_index[1] == node2)) | ((edge_index[0] == node2) & (edge_index[1] == node1))
                 edge_index = edge_index[:, ~edges_to_remove]
                 #print("Removed edge between ", node1, " and ", node2)
@@ -325,10 +344,30 @@ class Dominant(nn.Module):
             print("CACHING")
             self._adj_preped = (edge_index, edge_weight)
         
+
+        print("425")
+        print(anomaly_scores[425])
+        print(label[425])
+        print("1808")
+        print(anomaly_scores[1808])
+        print(label[1808])
+
+        print("Total removed to anomalous: ", count1)
+        print("Total removed from anomalous: ", count2)
+        print("Total other removed: ", count3)
+        print("The kth threshold was: ", kth_threshold_score)
+        print("The average degree was: ", average_degree)
+
+
         #elapsed = end - start
         #print(f"Time difference: {elapsed:0.4f} seconds")
         print("prior edge_index shape: ", prior_shape)
         print("new edge_index shape: ", edge_index.shape)
+
+        index_counts = Counter(added_edges)
+
+        for index, count in index_counts.items():
+            print(f"Removed {count} edges from node with index {index}")
         return edge_index, edge_weight
                
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
@@ -400,12 +439,15 @@ if __name__ == '__main__':
     from torch_geometric.utils import to_torch_sparse_tensor, dense_to_sparse
     #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
     edge_index = dataset.edge_index.to(config['model']['device'])
+    edge_index = torch.load('./notebooks/100_budget_greedy_edge_index.pt').to(config['model']['device'])
     #edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
 
+
+
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                      device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
     model.to(config['model']['device'])
-    model.fit(config, verbose=True, new_edge_index=edge_index, attrs=attrs)
+    model.fit(config, verbose=False, new_edge_index=edge_index, attrs=attrs)
     

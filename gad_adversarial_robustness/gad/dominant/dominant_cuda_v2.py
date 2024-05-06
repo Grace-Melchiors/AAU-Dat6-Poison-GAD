@@ -207,6 +207,7 @@ if __name__ == '__main__':
     from torch_geometric.utils import to_torch_sparse_tensor, dense_to_sparse
     #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
     edge_index = dataset.edge_index.to(config['model']['device'])
+    edge_index = torch.load('./notebooks/100_budget_greedy_edge_index.pt').to(config['model']['device'])
     #edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
