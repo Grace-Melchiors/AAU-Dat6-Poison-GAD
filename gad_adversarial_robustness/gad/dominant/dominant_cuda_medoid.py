@@ -23,7 +23,7 @@ from typing import Dict, Any
 
 
 class CustomGCNConv(GCNConv):
-    def __init__(self, in_channels, out_channels, mean_kwargs: Dict[str, Any] = dict(k=64, temperature=1.0, with_weight_correction=True),  *args, **kwargs):
+    def __init__(self, in_channels, out_channels, mean_kwargs: Dict[str, Any] = dict(k=64, temperature=0.25, with_weight_correction=True),  *args, **kwargs):
         self._mean_kwargs = mean_kwargs
         super(CustomGCNConv, self).__init__(in_channels=in_channels, out_channels=out_channels, *args, **kwargs, cached=False)
 
@@ -97,6 +97,8 @@ class Dominant(nn.Module):
         self.label = label
         self.top_k_AS = None
         self.score = None
+        self.last_struct_loss = None
+        self.last_feat_loss = None
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.shared_encoder(x, edge_index)
@@ -136,6 +138,9 @@ class Dominant(nn.Module):
                 loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
                 print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+                if epoch == config['model']['epochs'] - 1:
+                    self.last_struct_loss = struct_loss.detach().cpu().numpy()
+                    self.last_feat_loss = feat_loss.detach().cpu().numpy()
 
                 
 

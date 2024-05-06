@@ -18,7 +18,11 @@ import math
 from torch_geometric.nn import GCNConv
 from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
-from torch_geometric.utils import from_scipy_sparse_matrix, add_remaining_self_loops
+from torch_geometric.utils import from_scipy_sparse_matrix, add_remaining_self_loops, degree
+from torch_geometric.utils import k_hop_subgraph
+
+
+from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
 
 def drop_dissimilar_edges(features, adj, threshold: int = 0.1):
     if not sp.issparse(adj):
@@ -145,8 +149,8 @@ class Dominant(nn.Module):
         self.last_feat_loss = None
 
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        edge_index, edge_weight = self._preprocess_adjacency_matrix(edge_index, x)
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, label) -> Tuple[torch.Tensor, torch.Tensor]:
+        edge_index, edge_weight = self._preprocess_adjacency_matrix(edge_index, x, label)
         x, edge_index, edge_weight = self._ensure_contiguousness(x, edge_index, edge_weight)
 
         x = self.shared_encoder(x, edge_index, edge_weight)
@@ -171,7 +175,7 @@ class Dominant(nn.Module):
             self.train()
             optimizer.zero_grad()
             # TODO: Normalize for every forward step
-            A_hat, X_hat = self.forward(attrs, edge_index)
+            A_hat, X_hat = self.forward(attrs, edge_index, self.label)
             #self.adj_label = to_dense_adj(self.edge_index)[0]
             #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
             loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0], A_hat, attrs, X_hat, config['model']['alpha'])
@@ -184,7 +188,7 @@ class Dominant(nn.Module):
 
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
-                A_hat, X_hat = self.forward(attrs, edge_index)
+                A_hat, X_hat = self.forward(attrs, edge_index, self.label)
                 loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
                 #self.threshold_ = np.percentile(self.score, 100 * (1 - self.contamination))
@@ -213,35 +217,119 @@ class Dominant(nn.Module):
 
     def _preprocess_adjacency_matrix(self,
                                      edge_idx: torch.Tensor,
-                                     x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                                     x: torch.Tensor, label) -> Tuple[torch.Tensor, torch.Tensor]:
         edge_weight = None
+        edge_index = edge_idx
+        prior_shape = edge_index.shape
+        print(f'Label {label}')
+        
+        SAVED = True
 
-        if self.training and self._adj_preped is not None:
+        #if self.training and self._adj_preped is not None:
+        if self._adj_preped is not None:
             return self._adj_preped
+            
 
-        # set a timer and end of timer and calculate difference
-        #start = time.perf_counter()
-        adj = get_jaccard(
-            torch.sparse.FloatTensor(
-                edge_idx,
-                torch.ones_like(edge_idx[0], dtype=torch.float32)
-            ),
-            x
-        ).coalesce()
-        #end = time.perf_counter()
-        edge_idx, edge_weight = adj.indices(), adj.values()
-        del adj
+        if SAVED == False:
+            anomaly_scores = get_OddBall_AS(data=dataset, device=config['model']['device'])
+            anomaly_scores = torch.Tensor(anomaly_scores).to(config['model']['device'])
+            torch.save(anomaly_scores, 'anomaly_scores.pt')
+        elif SAVED == True:
+            anomaly_scores = torch.load('anomaly_scores.pt')
+
+
+        AVG_AS = False
+        KTH_AS = 30
+        if AVG_AS:
+            average_anomaly_score = torch.mean(anomaly_scores)
+        elif KTH_AS is not None:
+            num_nodes = x.size(0)
+            percentile_threshold = KTH_AS
+            k = int(percentile_threshold * num_nodes / 100)
+            kth_threshold_score, _ = torch.kthvalue(anomaly_scores, k)
+            print(f'Kth score: {kth_threshold_score}')
+
+        deg = degree(edge_idx[0])
+        non_zero_tensor = deg[deg != 0]
+        # Get mean of sum of nonzero
+        average_degree = non_zero_tensor.mean().item()
+        #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
+        # Currently with K = 30, we get 100 indexes.
+        # TODO: To prove concept, check how many of the nodes with these indexes have connections that are anomalies.
+
+        THRESHOLD = 0.6
+
+
+
+        print(f'Mean degree: {average_degree}')
+        if AVG_AS:
+            selected_nodes = (anomaly_scores < average_anomaly_score) & (deg > average_degree)
+        elif KTH_AS is not None:
+            selected_nodes = (anomaly_scores < kth_threshold_score) & (deg > average_degree)
+        else:
+            raise ValueError("Either AVG_AS or KTH_AS must be specified")
+
+        print(f'Selected nodes: {selected_nodes}')
+        print(f'Shape of selected nodes: {selected_nodes.shape}')
+        true_indices = selected_nodes.nonzero(as_tuple=False).squeeze()
+        
+        print("LOL")
+        print(true_indices, true_indices.shape)
+        num_hops = 1
+        for index in true_indices.cpu().numpy():
+            subset, _, _, edge_mask = k_hop_subgraph(int(index), num_hops, edge_idx)
+            label[subset]
+            print(label[subset].shape)
+            neighbor_anomaly_scores = anomaly_scores[subset]
+            print(f"Neighbourhood anomaly scores: {anomaly_scores[subset]}")
+            normalized_scores = torch.sigmoid(neighbor_anomaly_scores)
+            print("Normalized scores")
+            print(normalized_scores)
+            print(normalized_scores.shape)
+            #neighborhood_similarity = torch.sparse.sum(normalized_scores, dim=1)
+            print("Below threshold")
+            below_threshold_indices = torch.nonzero(normalized_scores < THRESHOLD)
+            print(below_threshold_indices)
+            print("Masked subset")
+            print("Index itself: ", index)
+            print(f'Subset: {subset}')
+            indices_of_nodes_in_1_hop_below_threshold = subset[below_threshold_indices].cpu().numpy()
+            print("Indices of nodes in 1 hop: ", indices_of_nodes_in_1_hop_below_threshold)
+            remove_own_index_mask = indices_of_nodes_in_1_hop_below_threshold != index
+            masked_indices_of_nodes_in_1_hop_below_threshold = indices_of_nodes_in_1_hop_below_threshold[remove_own_index_mask]
+            print("Remove own index: ", masked_indices_of_nodes_in_1_hop_below_threshold)
+            # Remove from edge_index
+            node1 = index
+            for node2 in masked_indices_of_nodes_in_1_hop_below_threshold:
+                edges_to_remove = ((edge_index[0] == node1) & (edge_index[1] == node2)) | ((edge_index[0] == node2) & (edge_index[1] == node1))
+                edge_index = edge_index[:, ~edges_to_remove]
+                #print("Removed edge between ", node1, " and ", node2)
+
+            
+
+
+
+        
+
+
+
+
+
+
+                #end = time.perf_counter()
 
         if (
             self.training
             and self._do_cache_adj_prep
         ):
             print("CACHING")
-            self._adj_preped = (edge_idx, edge_weight)
+            self._adj_preped = (edge_index, edge_weight)
         
         #elapsed = end - start
         #print(f"Time difference: {elapsed:0.4f} seconds")
-        return edge_idx, edge_weight
+        print("prior edge_index shape: ", prior_shape)
+        print("new edge_index shape: ", edge_index.shape)
+        return edge_index, edge_weight
                
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
     adj = sp.coo_matrix(adj)
