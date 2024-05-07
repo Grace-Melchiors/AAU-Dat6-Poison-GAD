@@ -185,23 +185,21 @@ def top_anomalous_nodes(anomaly_scores, labels, K, print_scores = False):
 
 
 
-def get_anomaly_indexes(scores, labels, k, method='top', print_scores = False):
+def get_anomaly_indexes(scores, labels, k, method='top', print_scores=False):
     # Convert lists to numpy arrays
     scores = np.array(scores)
     labels = np.array(labels)
     
     # Find indices of nodes with label = 1 and non-nan scores
-    #valid_indices = np.where((labels == 1) & (~np.isnan(scores)))[0]
-    valid_indices = torch.where(torch.tensor(labels) == 1)[0]
-    valid_indices = valid_indices.detach().cpu().numpy()
+    valid_indices = np.where((labels == 1) & (~np.isnan(scores)))[0]
 
     if method == 'top':
-        # Sort the valid indices based on scores in descending order
-        sorted_indices = sorted(valid_indices, key=lambda i: scores[i], reverse=True)
+        # Sort the valid indices based on scores in descending order, ignoring NaN values
+        sorted_indices = sorted(valid_indices, key=lambda i: scores[i] if not np.isnan(scores[i]) else -np.inf, reverse=True)
 
     elif method == 'lowest':
-        # Sort the valid indices based on scores in ascending order
-        sorted_indices = sorted(valid_indices, key=lambda i: scores[i])
+        # Sort the valid indices based on scores in ascending order, ignoring NaN values
+        sorted_indices = sorted(valid_indices, key=lambda i: scores[i] if not np.isnan(scores[i]) else np.inf)
     elif method == 'normal':
         # Sample K indices from a normal distribution centered around the mean of scores
         mean_score = np.mean(scores[valid_indices])
@@ -240,22 +238,23 @@ def get_anomalies_with_label_1(scores, labels):
         print("Node index: {}, Score: {}".format(node[0], node[2]))
 
 
-def load_injected_dataset(dataset_name):
+def load_injected_dataset(dataset_name, seed = 123):
+
     dataset = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
 
     data = dataset[0]
 
-    seed = 123
     num_nodes_to_inject = math.ceil((data.num_nodes / 100) * 5)
-    num_nodes_per_clique = 10
+    num_nodes_per_clique = 8
     num_cliques = (num_nodes_to_inject // 2) // num_nodes_per_clique
     num_contextual_outliers = num_nodes_to_inject - num_cliques * num_nodes_per_clique
 
+    print("--- Inserting outliers ---")
     data, ya = gen_contextual_outlier(data, n = num_contextual_outliers, k = 50, seed = seed) 
     #n (int) – Number of nodes converting to outliers.
     #k (int) – Number of candidate nodes for each outlier node.
 
-    data, ys = gen_structural_outlier(data, m = num_nodes_per_clique, n = num_cliques, seed = seed)
+    data, ys = gen_structural_outlier(data, m = num_nodes_per_clique, n = num_cliques, seed = seed, p=0.2)
     #m (int) - Number nodes in the outlier cliques.
     #n (int) - Number of outlier clique
     data.y = torch.logical_or(ys, ya).long()

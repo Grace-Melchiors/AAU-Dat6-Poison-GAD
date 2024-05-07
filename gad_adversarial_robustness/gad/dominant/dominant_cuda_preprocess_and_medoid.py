@@ -20,7 +20,33 @@ from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
 from torch_geometric.utils import from_scipy_sparse_matrix, add_remaining_self_loops
 
-def drop_dissimilar_edges(features, adj, threshold: int = 0.1):
+from gad_adversarial_robustness.gad.dominant.means import dense_cpu_soft_weighted_medoid_k_neighborhood, dense_device_soft_weighted_medoid_k_neighborhood
+from typing import Dict, Any
+
+
+class CustomGCNConv(GCNConv):
+    def __init__(self, in_channels, out_channels, mean_kwargs: Dict[str, Any] = dict(k=64, temperature=0.25, with_weight_correction=True),  *args, **kwargs):
+        self._mean_kwargs = mean_kwargs
+        super(CustomGCNConv, self).__init__(in_channels=in_channels, out_channels=out_channels, *args, **kwargs, cached=False)
+
+    def propagate(self, edge_index, size=None, **kwargs: Any) -> torch.Tensor:
+        node_feats = kwargs['x']
+        edge_weights = kwargs['edge_weight']
+        #print("edge_weights", edge_weights)
+        #edge_weights = torch.ones((edge_index.size(1), ), dtype=torch.float).to('cuda')
+        A = torch.sparse_coo_tensor(edge_index, edge_weights, (node_feats.size(0), node_feats.size(0))).coalesce()
+        #A = torch.sparse.FloatTensor(edge_index, edge_weights).coalesce()
+        return dense_device_soft_weighted_medoid_k_neighborhood(A=A, x=node_feats, device='cuda', **self._mean_kwargs)
+
+    
+    def aggregate(self, node_feats, edge_index, **kwargs):
+        edge_weights = kwargs['norm'] if 'norm' in kwargs else kwargs['edge_weight']
+        A = torch.sparse.FloatTensor(edge_index, edge_weights).coalesce()
+        return dense_cpu_soft_weighted_medoid_k_neighborhood(A, node_feats, **self._mean_kwargs)
+
+
+
+def drop_dissimilar_edges(features, adj, threshold: int = 0.02):
     if not sp.issparse(adj):
         adj = sp.csr_matrix(adj)
     modified_adj = adj.copy().tolil()
@@ -82,8 +108,8 @@ def get_jaccard(adjacency_matrix: torch.Tensor, features: torch.Tensor, threshol
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(Encoder, self).__init__()
-        self.gc1 = GCNConv(nfeat, nhid)
-        self.gc2 = GCNConv(nhid, nhid)
+        self.gc1 = CustomGCNConv(nfeat, nhid)
+        self.gc2 = CustomGCNConv(nhid, nhid)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_weight) -> torch.Tensor:
@@ -96,8 +122,8 @@ class Encoder(nn.Module):
 class AttributeDecoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(AttributeDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
-        self.gc2 = GCNConv(nhid, nfeat)
+        self.gc1 = CustomGCNConv(nhid, nhid)
+        self.gc2 = CustomGCNConv(nhid, nfeat)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_weight) -> torch.Tensor:
@@ -110,7 +136,7 @@ class AttributeDecoder(nn.Module):
 class StructureDecoder(nn.Module):
     def __init__(self, nhid: int, dropout: float):
         super(StructureDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
+        self.gc1 = CustomGCNConv(nhid, nhid)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_weight) -> torch.Tensor:
@@ -141,12 +167,14 @@ class Dominant(nn.Module):
         self.training = True
         self._adj_preped = None
         self._do_cache_adj_prep = True
+
         self.last_struct_loss = None
         self.last_feat_loss = None
 
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         edge_index, edge_weight = self._preprocess_adjacency_matrix(edge_index, x)
+        #print("Retrieved edge weights", edge_weight)
         x, edge_index, edge_weight = self._ensure_contiguousness(x, edge_index, edge_weight)
 
         x = self.shared_encoder(x, edge_index, edge_weight)
@@ -194,9 +222,9 @@ class Dominant(nn.Module):
 
                 print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
                 if epoch == config['model']['epochs'] - 1:
+                    print("LAST")
                     self.last_struct_loss = struct_loss.detach().cpu().numpy()
                     self.last_feat_loss = feat_loss.detach().cpu().numpy()
-
 
 
 
@@ -252,7 +280,7 @@ def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
     return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()
 
 
-def loss_func(adj: torch.Tensor, A_hat: torch.Tensor, attrs: torch.Tensor, X_hat: torch.Tensor, alpha: float, lambda_reg: float = 500) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def loss_func(adj: torch.Tensor, A_hat: torch.Tensor, attrs: torch.Tensor, X_hat: torch.Tensor, alpha: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     diff_attribute = torch.pow(X_hat - attrs, 2)
     attribute_reconstruction_errors = torch.sqrt(torch.sum(diff_attribute, 1))
     attribute_cost = torch.mean(attribute_reconstruction_errors)
@@ -261,14 +289,7 @@ def loss_func(adj: torch.Tensor, A_hat: torch.Tensor, attrs: torch.Tensor, X_hat
     structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 1))
     structure_cost = torch.mean(structure_reconstruction_errors)
 
-    # Compute the graph Laplacian matrix
-    #L = torch.diag(torch.sum(adj, 1)) - adj
-    #L_hat = torch.diag(torch.sum(A_hat, 1)) - A_hat
-
-    # Compute the regularization term
-    #reg_term = lambda_reg * torch.norm(L - L_hat, p='fro')
-
-    cost = alpha * attribute_reconstruction_errors + (1 - alpha) * structure_reconstruction_errors #+ reg_term
+    cost = alpha * attribute_reconstruction_errors + (1 - alpha) * structure_reconstruction_errors
     return cost, structure_cost, attribute_cost
 
 def prepare_adj_and_adj_label(edge_index):

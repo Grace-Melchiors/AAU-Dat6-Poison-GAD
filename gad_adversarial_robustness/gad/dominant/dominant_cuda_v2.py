@@ -61,6 +61,7 @@ class StructureDecoder(nn.Module):
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.gc1(x, edge_index))
         x = F.dropout(x, self.dropout, training=self.training)
+        print("x shape: ", x.shape)
         x = x @ x.T
         return x
 
@@ -84,6 +85,9 @@ class Dominant(nn.Module):
         self.score = None
         self.contamination = 0.1
         self.threshold_ = None
+        self.last_struct_loss = None
+        self.last_feat_loss = None
+
 
 
     
@@ -133,7 +137,12 @@ class Dominant(nn.Module):
 
 
                 print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
-              
+                if epoch == config['model']['epochs'] - 1:
+                    self.last_struct_loss = struct_loss.detach().cpu().numpy()
+                    self.last_feat_loss = feat_loss.detach().cpu().numpy()
+
+             
+
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
     adj = sp.coo_matrix(adj)
@@ -149,6 +158,7 @@ def loss_func(adj: torch.Tensor, A_hat: torch.Tensor, attrs: torch.Tensor, X_hat
     attribute_reconstruction_errors = torch.sqrt(torch.sum(diff_attribute, 1))
     attribute_cost = torch.mean(attribute_reconstruction_errors)
 
+    #print(f"A_hat shape: {A_hat.shape}, adj shape: {adj.shape}")
     diff_structure = torch.pow(A_hat - adj, 2)
     structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 1))
     structure_cost = torch.mean(structure_reconstruction_errors)

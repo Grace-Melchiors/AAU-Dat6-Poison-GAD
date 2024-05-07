@@ -5,6 +5,8 @@ import os
 import yaml
 import torch
 import torch.nn.functional as F
+from torch_geometric.utils import degree
+
 
 
 import torch_sparse as sp
@@ -12,6 +14,7 @@ from gad_adversarial_robustness.gad.dominant.dominant_cuda import Dominant
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from gad_adversarial_robustness.poison.greedy import update_edge_index
 from torch_geometric.utils import contains_self_loops, add_self_loops, add_remaining_self_loops, is_undirected, to_undirected
+from torch_geometric.data import Data
 
 def update_edge_index(edge_index, changes, device):
     updated_edge_index = edge_index.clone().to(device)
@@ -32,13 +35,38 @@ changes = [
     [2, 3, 0],
     [2, 6, 1]
 ]
-edge_index_lol = torch.tensor([[2, 3, 4, 5, 6], [3, 2, 5, 4, 7]])
+edge_index_lol = torch.tensor([[2, 3, 4, 5, 6, 2], [3, 2, 5, 4, 7, 9]])
+edge_index = to_undirected(edge_index_lol)
+node1 = 2
+node2 = 3
+
+
+print("==========")
+edges_to_remove = ((edge_index[0] == node1) & (edge_index[1] == node2)) | ((edge_index[0] == node2) & (edge_index[1] == node1))
+print("BEFORE: ", edge_index)
+edge_index = edge_index[:, ~edges_to_remove]
+print("REMOVED: ", edges_to_remove)
+print(edge_index)
+print("==========")
+
 #Make undirected: 
 print(to_undirected(edge_index_lol))
 
-edge_index_lol = update_edge_index(edge_index_lol, changes, 'cpu')
-print(edge_index_lol)
+#edge_index_lol = update_edge_index(edge_index_lol, changes, 'cpu')
+print(edge_index_lol[0][2])
 
+
+dataset: Data = load_data('inj_cora')
+print("HEJ")
+print(edge_index_lol[0])
+deg = degree(edge_index_lol[0])
+print(f'Degree {deg}')
+non_zero_tensor = deg[deg != 0]
+print(f'Nonzero {non_zero_tensor}')
+# Get mean of sum of nonzero
+mean = non_zero_tensor.mean().item()
+print(f'Mean degree: {mean}')
+print(dataset.x.size(0))
 
 
 script_dir = os.path.abspath('')
@@ -49,7 +77,6 @@ with open(yaml_path) as file:
 dataset_caching_path = os.path.join(script_dir, '..', '..', '..', 'data')
 
 
-dataset = load_data('inj_cora')
 adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
 #edge_index = torch.LongTensor(np.array(sp.coo_matrix(adj).nonzero()))
 adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
@@ -89,8 +116,11 @@ model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_di
                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
 model.to(config['model']['device'])
 model.fit(config, verbose=False)
+print(dataset.edge_attr)
+print(dataset.edge_attr.shape)
 edge_index_test = to_dense_adj(edge_index.to(config['model']['device']))[0]
 print(edge_index_test)
+
 
 
 
