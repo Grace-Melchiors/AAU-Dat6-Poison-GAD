@@ -1,5 +1,6 @@
 from collections import Counter
 from sklearn.preprocessing import MinMaxScaler
+from gad_adversarial_robustness.poison.greedy import target_node_mask
 
 import csv
 import os
@@ -202,14 +203,14 @@ class Dominant(nn.Module):
         self.last_feat_loss = None
 
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, label) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, label):
         edge_index, edge_weight = self._preprocess_adjacency_matrix(edge_index, x, label)
-        x, edge_index, edge_weight = self._ensure_contiguousness(x, edge_index, edge_weight)
+        #x, edge_index, edge_weight = self._ensure_contiguousness(x, edge_index, edge_weight)
 
         x = self.shared_encoder(x, edge_index, edge_weight)
         x_hat = self.attr_decoder(x, edge_index, edge_weight)
         struct_reconstructed = self.struct_decoder(x, edge_index, edge_weight)
-        return struct_reconstructed, x_hat
+        return struct_reconstructed, x_hat, edge_index
 
     def fit(self, config: dict, new_edge_index, attrs, verbose: bool = False, top_k: int = 10):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['model']['lr'])
@@ -228,7 +229,7 @@ class Dominant(nn.Module):
             self.train()
             optimizer.zero_grad()
             # TODO: Normalize for every forward step
-            A_hat, X_hat = self.forward(attrs, edge_index, self.label)
+            A_hat, X_hat, edge_index = self.forward(attrs, edge_index, self.label)
             #self.adj_label = to_dense_adj(self.edge_index)[0]
             #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
             loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0], A_hat, attrs, X_hat, config['model']['alpha'])
@@ -241,7 +242,7 @@ class Dominant(nn.Module):
 
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
-                A_hat, X_hat = self.forward(attrs, edge_index, self.label)
+                A_hat, X_hat, edge_index = self.forward(attrs, edge_index, self.label)
                 loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
                 #self.threshold_ = np.percentile(self.score, 100 * (1 - self.contamination))
@@ -318,7 +319,7 @@ class Dominant(nn.Module):
 
         
         AVG_AS = False
-        KTH_AS = 75 # 75 is good
+        KTH_AS = 65 # 75 is good
         if AVG_AS:
             average_anomaly_score = torch.mean(anomaly_scores)
         elif KTH_AS is not None:
@@ -330,12 +331,9 @@ class Dominant(nn.Module):
         deg = degree(edge_index[0])
         non_zero_tensor = deg[deg != 0]
         # Get mean of sum of nonzero
-        average_degree = non_zero_tensor.mean().item()
+        average_degree = non_zero_tensor.mean().item() - 1
         #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
         # Currently with K = 30, we get 100 indexes.
-        # TODO: To prove concept, check how many of the nodes with these indexes have connections that are anomalies.
-
-        THRESHOLD = 0.65
 
         print(f'Mean degree: {average_degree}')
         if AVG_AS:
@@ -345,8 +343,8 @@ class Dominant(nn.Module):
         else:
             raise ValueError("Either AVG_AS or KTH_AS must be specified")
 
-        print(f'Selected nodes: {selected_nodes}')
-        print(f'Shape of selected nodes: {selected_nodes.shape}')
+        #print(f'Selected nodes: {selected_nodes}')
+        #print(f'Shape of selected nodes: {selected_nodes.shape}')
         true_indices = selected_nodes.nonzero(as_tuple=False).squeeze()
         
         count1 = 0
@@ -370,7 +368,7 @@ class Dominant(nn.Module):
             jaccard_similarities = torch.tensor(jaccard_similarities).to(config_device)
 
             # Combine anomaly scores and Jaccard similarities
-            combined_scores = anomaly_scores[subset] + (400 * jaccard_similarities)
+            combined_scores = anomaly_scores[subset] + (100 * jaccard_similarities)
 
             print("COMBINED SCORES")
             print(combined_scores)
@@ -380,11 +378,13 @@ class Dominant(nn.Module):
 
             label[subset]
             print(label[subset].shape)
-            neighbor_anomaly_scores = anomaly_scores[subset]
+
             print(f"Neighbourhood anomaly scores: {anomaly_scores[subset]}")
             normalized_scores = torch.sigmoid(combined_scores)
+
             print("Normalized scores")
             print(normalized_scores)
+
             for element in normalized_scores:
                 if element < THRESHOLD:
                     print("Element lower than threshold! ", element)
@@ -393,18 +393,15 @@ class Dominant(nn.Module):
             print("Below threshold")
             below_threshold_indices = torch.nonzero(normalized_scores < THRESHOLD)
             print(below_threshold_indices)
-            print("Masked subset")
-            print("Index itself: ", index)
-            print(f'Subset: {subset}')
+            print("Index of center nodes: ", index)
             indices_of_nodes_in_1_hop_below_threshold = subset[below_threshold_indices].cpu().numpy()
-            print("Indices of nodes in 1 hop: ", indices_of_nodes_in_1_hop_below_threshold)
+            #print("Indices of nodes in 1 hop: ", indices_of_nodes_in_1_hop_below_threshold)
             remove_own_index_mask = indices_of_nodes_in_1_hop_below_threshold != index
             masked_indices_of_nodes_in_1_hop_below_threshold = indices_of_nodes_in_1_hop_below_threshold[remove_own_index_mask]
-            print("Remove own index: ", masked_indices_of_nodes_in_1_hop_below_threshold)
+            print("Indices of all neighbors of center node below threshold: ", masked_indices_of_nodes_in_1_hop_below_threshold)
             # Remove from edge_index
             node1 = index
             for node2 in masked_indices_of_nodes_in_1_hop_below_threshold:
-
                 print(f'Jaccard: {_jaccard_similarity(x[node1], x[node2])}')
                 if label[node2] == 1:
                     count1+=1
@@ -420,7 +417,7 @@ class Dominant(nn.Module):
 
                 top_indices = torch.argsort(anomaly_scores, descending=True)[:int(0.2 * len(anomaly_scores))]
 
-                NUM_EDGES_TO_ADD_TO_ANOMALOUS = 2
+                NUM_EDGES_TO_ADD_TO_ANOMALOUS = 4
                 for i in range(NUM_EDGES_TO_ADD_TO_ANOMALOUS):
                     source = node2
                     target = np.random.choice(top_indices.cpu().numpy())
@@ -458,9 +455,9 @@ class Dominant(nn.Module):
         #np.savetxt('edgeweight.csv', tensor_array, delimiter=',', fmt='%d')
 
 
-
         for index, count in index_counts.items():
             print(f"Removed {count} edges from node with index {index}")
+
         return edge_index, edge_weight
                
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
@@ -537,10 +534,15 @@ if __name__ == '__main__':
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
 
-
-
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
                      device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
     model.to(config['model']['device'])
     model.fit(config, verbose=False, new_edge_index=edge_index, attrs=attrs)
+    
+    ids = [2600, 1206, 2654, 1362, 214, 459, 1674, 1854, 980, 2386]
+    target_nodes_as = target_node_mask(target_list=ids, tuple_list=model.score)
+    AS_DOM = np.sum(target_nodes_as)
+    print(AS_DOM)
+
+
     

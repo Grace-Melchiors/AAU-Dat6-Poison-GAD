@@ -334,6 +334,7 @@ plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
 
 # %%
 plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
+plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
 
 #print(AS_DOM2)
 
