@@ -20,6 +20,7 @@ from gad_adversarial_robustness.gad.dominant.dominant_cuda_v2 import Dominant
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_medoid import Dominant as DominantAgg
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess import Dominant as DominantPP
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_and_medoid import Dominant as DominantAggPP
+from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob import Dominant as DominantNew
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.data import Data
 from gad_adversarial_robustness.poison.greedy import multiple_AS
@@ -33,11 +34,11 @@ USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
 USE_FIRST_K_TO_SELECT_TOP_K_TARGET = False
 
-TOP_K = 20
+TOP_K = 10
 
 SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
 
-DATASET_NAME = 'Cora'
+DATASET_NAME = 'inj_cora'
 print(DATASET_NAME)
 GRAPH_PARTITION_SIZE = None
 
@@ -130,7 +131,7 @@ for target in target_list:
 
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 9
+budget = TOP_K * 5
 
 print("Starting attack...")
 """
@@ -163,9 +164,15 @@ dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden
 #_, AS_2, AS_DOM_2, AUC_DOM_2, ACC_DOM_2, perturb_2, edge_index_2, CHANGE_IN_TARGET_NODE_AS_2 = greedy_attack_with_statistics(
 #    model, triple, dom_model_2, config, target_list, budget, print_stats = True)
 
+normal_dominant = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
+                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
-    model, triple, Dominant, DominantAgg, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_3=DominantPP, DOMINANT_model_4=DominantAggPP)
+    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=None, DOMINANT_model_4=None)
+
+# %%
+torch.save(edge_index_1, 'edge_index_10_50.pt')
 
 # -------------
 
@@ -191,7 +198,7 @@ def plot_scores(scores1, scores2, title='AUC Scores by Budget', xlabel='Budget',
     plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
     #plt.plot(budgets, scores, marker='o', linestyle='-', color='b')  # Plotting the scores
     plt.plot(budgets, scores1, marker='o', linestyle='-', color='b', label='Unmodified DOMINANT')  # Plotting the first set of scores
-    plt.plot(budgets, scores2, marker='o', linestyle='-', color='r', label='DOMINANT w/ soft medoid aggregation')  # Plotting the second set of scores
+    plt.plot(budgets, scores2, marker='o', linestyle='-', color='r', label='Our proposal')  # Plotting the second set of scores
     if scores3 is not None:
         plt.plot(budgets, scores3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Jaccard')  # Plotting the third set of scores
     if scores4 is not None:
@@ -257,7 +264,7 @@ def plot_score_percentage_change(scores1, scores2, title='Percentage Change of S
     # Creating the plot
     plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
     plt.plot(budgets, percentage_changes1, marker='o', linestyle='-', color='b', label='Unmodified DOMINANT')
-    plt.plot(budgets, percentage_changes2, marker='o', linestyle='-', color='r', label='DOMINANT w/ soft medoid aggregation')
+    plt.plot(budgets, percentage_changes2, marker='o', linestyle='-', color='r', label='Our proposal')
     if scores3 is not None:
         plt.plot(budgets, percentage_changes3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Jaccard')
     if scores4 is not None:
@@ -322,10 +329,11 @@ def plot_anomaly_scores(anomaly_scores, model_name):
     plt.show()
 
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[0], "Unmodified DOMINANT")
-plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "DOMINANT Soft Medoid")
+plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "Our proposal")
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
 
 # %%
+plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
 
 #print(AS_DOM2)
 

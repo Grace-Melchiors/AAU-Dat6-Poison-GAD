@@ -243,7 +243,7 @@ def get_DOMINANT_eval_values(model_obj, config, target_list, perturb, dom_params
 
     return AS_DOM, AUC_DOM, ACC_DOM, target_nodes_as, last_feat_loss, last_struct_loss
 
-def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINANT_model_2, dom_params, config, target_list, B, CPI = 1, print_stats = False, DOMINANT_model_3 = None, DOMINANT_model_4 = None):
+def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, dom_params, config, target_list, B, CPI = 1, print_stats = False, DOMINANT_model_2 = None,  DOMINANT_model_3 = None, DOMINANT_model_4 = None):
     """
         Parameters: 
         - model: The surrogate model
@@ -269,50 +269,93 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
     triple_copy = triple.copy()
     # print(f'triple copy type: {type(triple_copy)}')
     triple_torch = Variable(torch.from_numpy(triple_copy), requires_grad = True) 
+
     AS = []
-    AS_DOM = [[], [], [], []]
-    AUC_DOM = [[], [], [], []]
-    ACC_DOM = [[], [], [], []]
-    LAST_FEAT_LOSS = [[], [], [], []]
-    LAST_STRUCT_LOSS = [[], [], [], []]
-    CHANGE_IN_AS_TARGET_NODE_AS = [[], [], [], []]
+
+    ### Depends on number of models
+
+    AS_DOM = [[]]
+    AUC_DOM = [[]]
+    ACC_DOM = [[]]
+    LAST_FEAT_LOSS = [[]]
+    LAST_STRUCT_LOSS = [[]]
+    CHANGE_IN_AS_TARGET_NODE_AS = [[]]
+
+    if DOMINANT_model_2 is not None:
+        # Append empty array to 6 above arrays
+        AS_DOM.append([])
+        AUC_DOM.append([])
+        ACC_DOM.append([])
+        LAST_FEAT_LOSS.append([])
+        LAST_STRUCT_LOSS.append([])
+        CHANGE_IN_AS_TARGET_NODE_AS.append([])
+
+    if DOMINANT_model_3 is not None:
+        # Append empty array to 6 above arrays
+        AS_DOM.append([])
+        AUC_DOM.append([])
+        ACC_DOM.append([])
+        LAST_FEAT_LOSS.append([])
+        LAST_STRUCT_LOSS.append([])
+        CHANGE_IN_AS_TARGET_NODE_AS.append([])
+
+    if DOMINANT_model_4 is not None:
+        # Append empty array to 6 above arrays
+        AS_DOM.append([])
+        AUC_DOM.append([])
+        ACC_DOM.append([])
+        LAST_FEAT_LOSS.append([])
+        LAST_STRUCT_LOSS.append([])
+        CHANGE_IN_AS_TARGET_NODE_AS.append([])
+
+    ###
+
     perturb = []
     AS.append(model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
 
     AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1, last_feat_loss_1, last_struct_loss_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
-    AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2, last_feat_loss_2, last_struct_loss_2 = get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
-    AS_DOM_temp_3, AUC_DOM_temp_3, ACC_DOM_temp_3, target_nodes_as_3, last_feat_loss_3, last_struct_loss_3 = get_DOMINANT_eval_values(DOMINANT_model_3, config, target_list, perturb, dom_params)
-    AS_DOM_temp_4, AUC_DOM_temp_4, ACC_DOM_temp_4, target_nodes_as_4, last_feat_loss_4, last_struct_loss_4 = get_DOMINANT_eval_values(DOMINANT_model_4, config, target_list, perturb, dom_params)
+    insert_count = 0
 
-    LAST_FEAT_LOSS[0].append(last_feat_loss_1)
-    LAST_FEAT_LOSS[1].append(last_feat_loss_2)
-    LAST_FEAT_LOSS[2].append(last_feat_loss_3)
-    LAST_FEAT_LOSS[3].append(last_feat_loss_4)
+    LAST_FEAT_LOSS[insert_count].append(last_feat_loss_1)
+    LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_1)
+    CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_1)
+    AS_DOM[insert_count].append(AS_DOM_temp_1)
+    AUC_DOM[insert_count].append(AUC_DOM_temp_1)
+    ACC_DOM[insert_count].append(ACC_DOM_temp_1)
+    insert_count +=1
 
-    LAST_STRUCT_LOSS[0].append(last_struct_loss_1)
-    LAST_STRUCT_LOSS[1].append(last_struct_loss_2)
-    LAST_STRUCT_LOSS[2].append(last_struct_loss_3)
-    LAST_STRUCT_LOSS[3].append(last_struct_loss_4)
 
-    CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
-    CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
-    CHANGE_IN_AS_TARGET_NODE_AS[2].append(target_nodes_as_3)
-    CHANGE_IN_AS_TARGET_NODE_AS[3].append(target_nodes_as_4)
+    if DOMINANT_model_2 is not None:
+        AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2, last_feat_loss_2, last_struct_loss_2 = get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
+        LAST_FEAT_LOSS[insert_count].append(last_feat_loss_2)
+        LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_2)
+        CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_2)
+        AS_DOM[insert_count].append(AS_DOM_temp_2)
+        AUC_DOM[insert_count].append(AUC_DOM_temp_2)
+        ACC_DOM[insert_count].append(ACC_DOM_temp_2)
+        insert_count += 1
+    if DOMINANT_model_3 is not None:
+        AS_DOM_temp_3, AUC_DOM_temp_3, ACC_DOM_temp_3, target_nodes_as_3, last_feat_loss_3, last_struct_loss_3 = get_DOMINANT_eval_values(DOMINANT_model_3, config, target_list, perturb, dom_params)
+        LAST_FEAT_LOSS[insert_count].append(last_feat_loss_3)
+        LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_3)
+        CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_3)
+        AS_DOM[insert_count].append(AS_DOM_temp_3)
+        AUC_DOM[insert_count].append(AUC_DOM_temp_3)
+        ACC_DOM[insert_count].append(ACC_DOM_temp_3)
+        insert_count += 1
+    if DOMINANT_model_4 is not None:
+        AS_DOM_temp_4, AUC_DOM_temp_4, ACC_DOM_temp_4, target_nodes_as_4, last_feat_loss_4, last_struct_loss_4 = get_DOMINANT_eval_values(DOMINANT_model_4, config, target_list, perturb, dom_params)
+        LAST_FEAT_LOSS[insert_count].append(last_feat_loss_4)
+        LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_4)
+        CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_4)
+        AS_DOM[insert_count].append(AS_DOM_temp_4)
+        AUC_DOM[insert_count].append(AUC_DOM_temp_4)
+        ACC_DOM[insert_count].append(ACC_DOM_temp_4)
+        insert_count += 1
 
-    AS_DOM[0].append(AS_DOM_temp_1)
-    AS_DOM[1].append(AS_DOM_temp_2)
-    AS_DOM[2].append(AS_DOM_temp_3)
-    AS_DOM[3].append(AS_DOM_temp_4)
 
-    AUC_DOM[0].append(AUC_DOM_temp_1)
-    AUC_DOM[1].append(AUC_DOM_temp_2)
-    AUC_DOM[2].append(AUC_DOM_temp_3)
-    AUC_DOM[3].append(AUC_DOM_temp_4)
 
-    ACC_DOM[0].append(ACC_DOM_temp_1)
-    ACC_DOM[1].append(ACC_DOM_temp_2)
-    ACC_DOM[2].append(ACC_DOM_temp_3)
-    ACC_DOM[3].append(ACC_DOM_temp_4)
+
 
     if(print_stats): print('initial anomaly score:', model.true_AS(triple_torch).data.detach().cpu().numpy()[0])
     
@@ -380,51 +423,63 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, DOMINAN
         true_AScore = model.true_AS(triple_torch).data.detach().cpu().numpy()[0] 
         AS.append(true_AScore)
 
+        # Here
         AS_DOM_temp_1, AUC_DOM_temp_1, ACC_DOM_temp_1, target_nodes_as_1, last_feat_loss_1, last_struct_loss_1 = get_DOMINANT_eval_values(DOMINANT_model_1, config, target_list, perturb, dom_params)
-        AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2, last_feat_loss_2, last_struct_loss_2 = get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
-        AS_DOM_temp_3, AUC_DOM_temp_3, ACC_DOM_temp_3, target_nodes_as_3, last_feat_loss_3, last_struct_loss_3 = get_DOMINANT_eval_values(DOMINANT_model_3, config, target_list, perturb, dom_params)
-        AS_DOM_temp_4, AUC_DOM_temp_4, ACC_DOM_temp_4, target_nodes_as_4, last_feat_loss_4, last_struct_loss_4 = get_DOMINANT_eval_values(DOMINANT_model_4, config, target_list, perturb, dom_params)
+        insert_count = 0
 
-        LAST_FEAT_LOSS[0].append(last_feat_loss_1)
-        LAST_FEAT_LOSS[1].append(last_feat_loss_2)
-        LAST_FEAT_LOSS[2].append(last_feat_loss_3)
-        LAST_FEAT_LOSS[3].append(last_feat_loss_4)
+        LAST_FEAT_LOSS[insert_count].append(last_feat_loss_1)
+        LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_1)
+        CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_1)
+        AS_DOM[insert_count].append(AS_DOM_temp_1)
+        AUC_DOM[insert_count].append(AUC_DOM_temp_1)
+        ACC_DOM[insert_count].append(ACC_DOM_temp_1)
+        insert_count +=1
 
-        LAST_STRUCT_LOSS[0].append(last_struct_loss_1)
-        LAST_STRUCT_LOSS[1].append(last_struct_loss_2)
-        LAST_STRUCT_LOSS[2].append(last_struct_loss_3)
-        LAST_STRUCT_LOSS[3].append(last_struct_loss_4)
 
-        CHANGE_IN_AS_TARGET_NODE_AS[0].append(target_nodes_as_1)
-        CHANGE_IN_AS_TARGET_NODE_AS[1].append(target_nodes_as_2)
-        CHANGE_IN_AS_TARGET_NODE_AS[2].append(target_nodes_as_3)
-        CHANGE_IN_AS_TARGET_NODE_AS[3].append(target_nodes_as_4)
+        if DOMINANT_model_2 is not None:
+            AS_DOM_temp_2, AUC_DOM_temp_2, ACC_DOM_temp_2, target_nodes_as_2, last_feat_loss_2, last_struct_loss_2 = get_DOMINANT_eval_values(DOMINANT_model_2, config, target_list, perturb, dom_params)
+            LAST_FEAT_LOSS[insert_count].append(last_feat_loss_2)
+            LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_2)
+            CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_2)
+            AS_DOM[insert_count].append(AS_DOM_temp_2)
+            AUC_DOM[insert_count].append(AUC_DOM_temp_2)
+            ACC_DOM[insert_count].append(ACC_DOM_temp_2)
+            insert_count += 1
+        if DOMINANT_model_3 is not None:
+            AS_DOM_temp_3, AUC_DOM_temp_3, ACC_DOM_temp_3, target_nodes_as_3, last_feat_loss_3, last_struct_loss_3 = get_DOMINANT_eval_values(DOMINANT_model_3, config, target_list, perturb, dom_params)
+            LAST_FEAT_LOSS[insert_count].append(last_feat_loss_3)
+            LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_3)
+            CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_3)
+            AS_DOM[insert_count].append(AS_DOM_temp_3)
+            AUC_DOM[insert_count].append(AUC_DOM_temp_3)
+            ACC_DOM[insert_count].append(ACC_DOM_temp_3)
+            insert_count += 1
+        if DOMINANT_model_4 is not None:
+            AS_DOM_temp_4, AUC_DOM_temp_4, ACC_DOM_temp_4, target_nodes_as_4, last_feat_loss_4, last_struct_loss_4 = get_DOMINANT_eval_values(DOMINANT_model_4, config, target_list, perturb, dom_params)
+            LAST_FEAT_LOSS[insert_count].append(last_feat_loss_4)
+            LAST_STRUCT_LOSS[insert_count].append(last_struct_loss_4)
+            CHANGE_IN_AS_TARGET_NODE_AS[insert_count].append(target_nodes_as_4)
+            AS_DOM[insert_count].append(AS_DOM_temp_4)
+            AUC_DOM[insert_count].append(AUC_DOM_temp_4)
+            ACC_DOM[insert_count].append(ACC_DOM_temp_4)
+            insert_count += 1
 
-        AS_DOM[0].append(AS_DOM_temp_1)
-        AS_DOM[1].append(AS_DOM_temp_2)
-        AS_DOM[2].append(AS_DOM_temp_3)
-        AS_DOM[3].append(AS_DOM_temp_4)
 
-        AUC_DOM[0].append(AUC_DOM_temp_1)
-        AUC_DOM[1].append(AUC_DOM_temp_2)
-        AUC_DOM[2].append(AUC_DOM_temp_3)
-        AUC_DOM[3].append(AUC_DOM_temp_4)
 
-        ACC_DOM[0].append(ACC_DOM_temp_1)
-        ACC_DOM[1].append(ACC_DOM_temp_2)
-        ACC_DOM[2].append(ACC_DOM_temp_3)
-        ACC_DOM[3].append(ACC_DOM_temp_4)
-
+        
         if(print_stats): 
             print("Iteration: ", i)
             print('DOMINANT (regular): Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_1, 
                                 '--- DOM AUC:', AUC_DOM_temp_1, '--- TARGET DOM ACC:', ACC_DOM_temp_1)
-            print('DOMINANT w/ SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
-                                '--- DOM AUC:', AUC_DOM_temp_2, '--- TARGET DOM ACC:', ACC_DOM_temp_2)
-            print('DOMINANT w/ Jaccard Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_3, 
-                                '--- DOM AUC:', AUC_DOM_temp_3, '--- TARGET DOM ACC:', ACC_DOM_temp_3)
-            print('DOMINANT w/ Jaccard and SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_4, 
-                                '--- DOM AUC:', AUC_DOM_temp_4, '--- TARGET DOM ACC:', ACC_DOM_temp_4)
+            if DOMINANT_model_2 is not None:
+                print('DOMINANT w/ SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
+                                    '--- DOM AUC:', AUC_DOM_temp_2, '--- TARGET DOM ACC:', ACC_DOM_temp_2)
+            if DOMINANT_model_3 is not None:
+                print('DOMINANT w/ Jaccard Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_3, 
+                                    '--- DOM AUC:', AUC_DOM_temp_3, '--- TARGET DOM ACC:', ACC_DOM_temp_3)
+            if DOMINANT_model_4 is not None:
+                print('DOMINANT w/ Jaccard and SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_4, 
+                                    '--- DOM AUC:', AUC_DOM_temp_4, '--- TARGET DOM ACC:', ACC_DOM_temp_4)
     AS = np.array(AS)    
 
 
