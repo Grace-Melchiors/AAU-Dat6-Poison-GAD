@@ -1,11 +1,7 @@
 model:
-  hidden_dim: 96
-  epochs: 200
+  hidden_dim: 64 
+  epochs: 100
   lr: 0.005
   dropout: 0.3
-  alpha: 0.7
+  alpha: 0.8
   device: cuda
-  latent_dim: 48
-  ddpm_timesteps: 400
-  ddpm_loss_weight: 0.6
-  l2_reg: 0.00005

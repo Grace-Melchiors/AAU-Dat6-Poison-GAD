@@ -14,6 +14,7 @@ from torch.nn.modules import Module
 from torch.nn import Parameter
 import math
 from torch_geometric.nn import GCNConv
+import torch_geometric.utils as pyg_utils
 
 from gad_adversarial_robustness.gad.GCN_Jaccard import GCNJaccard, to_tensor, is_sparse_tensor, normalize_adj, sparse_mx_to_torch_sparse_tensor, to_scipy, normalize_adj_tensor
 from tqdm import tqdm
@@ -60,7 +61,7 @@ class StructureDecoder(nn.Module):
 
 class Dominant(nn.Module):
     def __init__(self, feat_size: int, hidden_size: int, dropout: float, device: str, 
-                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, binary_feature=True):
+                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, adj: np.ndarray, binary_feature=True):
         super(Dominant, self).__init__()
         self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
@@ -71,11 +72,21 @@ class Dominant(nn.Module):
         self.adj_label = adj_label.to(self.device).requires_grad_(True)
         self.attrs = attrs.to(self.device).requires_grad_(True)
         self.label = label
+
         self.top_k_AS = None
+        self.top_k_AS_scores = None
         self.score = None
+
+        # related to graphing - unique same as in jaccard dominant version
+        self.feature_loss_arr = []
+        self.structure_loss_arr =[]
+        self.loss_arr = []
+        self.aucroc_arr = []
+        self.aucroc_norm_arr = []
 
         ## JACCARD related: !---------!---------!---------!---------!--------- ##---------!--------- ##
         self.binary_feature = binary_feature
+        self.adj=adj
         ## !---------!---------!---------!---------!--------- ##---------!--------- ##
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -89,7 +100,7 @@ class Dominant(nn.Module):
 
         ## JACCARD related: !---------!---------!---------!---------!--------- ##---------!--------- ##
         self.threshold = threshold
-        modified_adj = self.drop_dissimilar_edges(self.attrs, adj)
+        modified_adj = self.drop_dissimilar_edges(self.attrs, self.adj)
         # modified_adj = drop_dissimilar_edges_independentVersion(self.attrs, adj)
         self.attrs, modified_adj, labels = to_tensor(self.attrs, modified_adj, self.label, device=self.device)
         self.adj = modified_adj
@@ -97,8 +108,15 @@ class Dominant(nn.Module):
 
         if is_sparse_tensor(self.adj): # normalizing adj matrix: from line 176-182 (https://github.com/DSE-MSU/DeepRobust/blob/master/deeprobust/graph/defense/gcn.py)
             adj_norm = normalize_adj_tensor(self.adj, sparse=True)
+            adj_norm_dense = adj_norm.to_dense()
+
         else:
             adj_norm = normalize_adj_tensor(self.adj)
+
+        # Convert dense adjacency matrix (adj_norm) to sparse edge index
+        edge_index = pyg_utils.dense_to_sparse(adj_norm_dense)[0]
+        self.edge_index = edge_index
+
         ## !---------!---------!---------!---------!--------- ##!---------!---------!--------- ##
 
         for epoch in range(config['model']['epochs']):
@@ -112,17 +130,30 @@ class Dominant(nn.Module):
             if verbose:
                 print(f"Epoch: {epoch:04d}, train_loss={loss.item():.5f}, "
                     f"train/struct_loss={struct_loss.item():.5f}, train/feat_loss={feat_loss.item():.5f}")
-
+                
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
 
                 A_hat, X_hat = self.forward(self.attrs, self.edge_index)
                 
                 loss, struct_loss, feat_loss = loss_func(self.adj_label, A_hat, self.attrs, X_hat, config['model']['alpha'])
-                
                 self.score = loss.detach().cpu().numpy()
 
-                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+                # print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+                aucroc_normalized = roc_auc_score(self.label, 1 / (1 + np.exp(-self.score.reshape(-1, 1))))
+
+                aucroc= roc_auc_score(self.label, self.score.reshape(-1, 1))
+                # aucroc = roc_auc_score(self.label, self.score.reshape(-1, 1))
+                print(f"Epoch: {epoch:04d}, roc-auc: {aucroc}")
+
+
+                # ------------ retrieve plotting values from each epoch
+                self.feature_loss_arr.append(feat_loss.detach().cpu().numpy())
+                self.structure_loss_arr.append(struct_loss.detach().cpu().numpy())
+                self.loss_arr.append(loss.detach().cpu().numpy())
+                
+                self.aucroc_arr.append(aucroc)
+                self.aucroc_norm_arr.append(aucroc_normalized)
 
                 # Identify and store the IDs of the nodes with the top K highest anomaly scores
                 if top_k is not None:
@@ -178,23 +209,40 @@ class Dominant(nn.Module):
 # @njit
 def dropedge_jaccard(A, iA, jA, features, threshold):
     removed_cnt = 0
+    
+    count = 0 #debug
+
     for row in range(len(iA)-1):
         for i in range(iA[row], iA[row+1]):
             # print(row, jA[i], A[i])
             n1 = row
             n2 = jA[i]
             a, b = features[n1], features[n2]
-            # intersection = np.count_nonzero(a*b) --------------------------- Gave error
+            # J = intersection * 1.0 / (np.count_nonzero(a.detach().cpu().numpy()) + np.count_nonzero(b.detach().cpu().numpy()) - intersection)
+
+            # --- vvv Below was differs from original vvv --> needed to handle division by zero 
             intersection = np.count_nonzero((a*b).detach().cpu().numpy())
+            a_nonzero_count = np.count_nonzero(a.detach().cpu().numpy())
+            b_nonzero_count = np.count_nonzero(b.detach().cpu().numpy())
+            union = a_nonzero_count + b_nonzero_count - intersection
 
-            # J = intersection * 1.0 / (np.count_nonzero(a) + np.count_nonzero(b) - intersection)
-            J = intersection * 1.0 / (np.count_nonzero(a.detach().cpu().numpy()) + np.count_nonzero(b.detach().cpu().numpy()) - intersection)
+            if union == 0:
+                # handle cases where union=0
+                J = 0.0
+                count+=1
+            else: 
+                J = intersection * 1.0 / union
 
+            # print('a: ', a.detach().cpu().numpy())
+            # print('b: ', b.detach().cpu().numpy())
+            # print('intersection: ', intersection)
 
             if J < threshold:
                 A[i] = 0
                 # A[n2, n1] = 0
                 removed_cnt += 1
+
+    print("count of avoided zero division: -------------------------------", count)
     return removed_cnt
 
 

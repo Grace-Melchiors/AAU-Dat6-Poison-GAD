@@ -61,13 +61,14 @@ class StructureDecoder(nn.Module):
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.gc1(x, edge_index))
         x = F.dropout(x, self.dropout, training=self.training)
+        print("x shape: ", x.shape)
         x = x @ x.T
         return x
 
 
 class Dominant(nn.Module):
     def __init__(self, feat_size: int, hidden_size: int, dropout: float, device: str, 
-                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray):
+                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, prior_labels):
         super(Dominant, self).__init__()
         self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
@@ -82,14 +83,14 @@ class Dominant(nn.Module):
         self.top_k_AS = None
         self.top_k_AS_scores = None
         self.score = None
+        self.contamination = 0.1
+        self.threshold_ = None
+        self.last_struct_loss = None
+        self.last_feat_loss = None
 
-        # related to graphing - unique same as in jaccard dominant version
-        self.feature_loss_arr = []
-        self.structure_loss_arr =[]
-        self.loss_arr = []
-        self.aucroc_arr = []
-        self.aucroc_norm_arr = []
 
+
+    
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.shared_encoder(x, edge_index)
         x_hat = self.attr_decoder(x, edge_index)
@@ -128,23 +129,19 @@ class Dominant(nn.Module):
                 self.eval()
                 A_hat, X_hat = self.forward(attrs, edge_index)
                 loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
-                
                 self.score = loss.detach().cpu().numpy()
-                
-                # print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
-                # print(f"Epoch: {epoch:04d}, roc-auc: {roc_auc_score(self.label, self.score)}") ###################################### Experiencing problem here !!!!!!!!!!!!!!
-                aucroc_normalized = roc_auc_score(self.label, 1 / (1 + np.exp(-self.score.reshape(-1, 1))))
+                #self.threshold_ = np.percentile(self.score, 100 * (1 - self.contamination))
+                #pred = (self.score > self.threshold_)
+                #print(pred)
+                #print(self.label[33], self.label[65], self.label[88], self.label[89], self.label[90])
 
-                aucroc= roc_auc_score(self.label, self.score.reshape(-1, 1))
 
-                print(f"Epoch: {epoch:04d}, roc-auc: {aucroc}")
+                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+                if epoch == config['model']['epochs'] - 1:
+                    self.last_struct_loss = struct_loss.detach().cpu().numpy()
+                    self.last_feat_loss = feat_loss.detach().cpu().numpy()
 
-                # ------------ retrieve plotting values from each epoch
-                self.feature_loss_arr.append(feat_loss.detach().cpu().numpy())
-                self.structure_loss_arr.append(struct_loss.detach().cpu().numpy())
-                self.loss_arr.append(loss.detach().cpu().numpy())
-                self.aucroc_arr.append(aucroc)
-                self.aucroc_norm_arr.append(aucroc_normalized)
+             
 
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
@@ -161,6 +158,7 @@ def loss_func(adj: torch.Tensor, A_hat: torch.Tensor, attrs: torch.Tensor, X_hat
     attribute_reconstruction_errors = torch.sqrt(torch.sum(diff_attribute, 1))
     attribute_cost = torch.mean(attribute_reconstruction_errors)
 
+    #print(f"A_hat shape: {A_hat.shape}, adj shape: {adj.shape}")
     diff_structure = torch.pow(A_hat - adj, 2)
     structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 1))
     structure_cost = torch.mean(structure_reconstruction_errors)
@@ -209,6 +207,7 @@ if __name__ == '__main__':
     from torch_geometric.utils import to_torch_sparse_tensor, dense_to_sparse
     #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
     edge_index = dataset.edge_index.to(config['model']['device'])
+    edge_index = torch.load('./notebooks/100_budget_greedy_edge_index.pt').to(config['model']['device'])
     #edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])

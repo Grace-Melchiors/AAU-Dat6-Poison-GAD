@@ -4,6 +4,7 @@ import numpy as np
 import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
+from torch_geometric.utils import to_dense_adj
 
 
 def compare_OddBall_DOMINANT(data, DOMINANT_model, config, k, with_plot = False, print_accuracy = True):
@@ -161,6 +162,29 @@ def get_OddBall_AS(data, device, OddBall_AS = OddBall_AS):
     # Each triple represents an edge modification in the form of (node1, node2, edge_label).
 
     dense_adj = adj.to_dense()  #Fill in zeroes where there are no edges
+    
+    triple = []
+    for i in range(amount_of_nodes):
+        for j in range(i + 1, amount_of_nodes):
+            triple.append([i, j, dense_adj[i,j]])  #Fill with 0, then insert actual after
+
+    triple = np.array(triple)
+
+    model = OddBall_AS(n_node = amount_of_nodes, device = device)
+
+    OddBall_AS = model.true_AS(triple)
+
+    return OddBall_AS
+
+
+def get_OddBall_AS_simple(adj, amount_of_nodes, device, OddBall_AS = OddBall_AS):
+
+
+    # 'triple' is a list that will store the perturbed triples during the poisoning process.
+    # Each triple represents an edge modification in the form of (node1, node2, edge_label).
+    
+    dense_adj = to_dense_adj(adj)[0].detach().cpu().numpy()
+    #dense_adj = adj.to_dense()  #Fill in zeroes where there are no edges
     
     triple = []
     for i in range(amount_of_nodes):

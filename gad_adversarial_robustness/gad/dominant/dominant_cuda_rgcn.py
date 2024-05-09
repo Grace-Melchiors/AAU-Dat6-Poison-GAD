@@ -1,3 +1,4 @@
+import copy
 import os
 from pygod.detector import DOMINANT
 import yaml
@@ -18,51 +19,201 @@ from torch_geometric.nn import GCNConv
 from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
 
-def eval_precision_at_k(label, score, k=None):
-    if k is None:
-        k = sum(label)
-    precision_at_k = sum(label[score.topk(k).indices]) / k
-    return precision_at_k
+class RobustGCNConv(nn.Module):
+    r"""
+
+    Description
+    -----------
+    RobustGCN convolutional layer.
+
+    Parameters
+    ----------
+    in_features : int
+        Dimension of input features.
+    out_features : int
+        Dimension of output features.
+    act0 : func of torch.nn.functional, optional
+        Activation function. Default: ``F.elu``.
+    act1 : func of torch.nn.functional, optional
+        Activation function. Default: ``F.relu``.
+    initial : bool, optional
+        Whether to initialize variance.
+    dropout : float, optional
+            Rate of dropout. Default: ``0.0``.
+
+    """
+
+    def __init__(self, in_features, out_features, act0=F.elu, act1=F.relu, initial=False, dropout=0.0):
+        super(RobustGCNConv, self).__init__()
+        self.mean_conv = nn.Linear(in_features, out_features)
+        self.var_conv = nn.Linear(in_features, out_features)
+        self.act0 = act0
+        self.act1 = act1
+        self.initial = initial
+        if dropout > 0.0:
+            self.dropout = nn.Dropout(dropout)
+        else:
+            self.dropout = None
+
+    def forward(self, mean, var=None, adj0=None, adj1=None):
+        r"""
+
+        Parameters
+        ----------
+        mean : torch.Tensor
+            Tensor of mean of input features.
+        var : torch.Tensor, optional
+            Tensor of variance of input features. Default: ``None``.
+        adj0 : torch.SparseTensor, optional
+            Sparse tensor of adjacency matrix 0. Default: ``None``.
+        adj1 : torch.SparseTensor, optional
+            Sparse tensor of adjacency matrix 1. Default: ``None``.
+
+        Returns
+        -------
+
+        """
+        print(mean)
+        print("Line 76, ", mean)
+        mean = self.mean_conv(mean)
+        print("Line 86, ", mean)
+        if self.initial:
+            var = mean * 1
+        else:
+            var = self.var_conv(var)
+        mean = self.act0(mean)
+        print("Line 82, ", mean)
+        var = self.act1(var)
+        attention = torch.exp(-var)
+
+        mean = mean * attention
+        var = var * attention * attention
+
+        mean = torch.mm(adj0, mean)
+        var = torch.mm(adj1, var)
+        if self.dropout:
+            mean = self.act0(mean)
+            var = self.act1(var)
+            if self.dropout is not None:
+                mean = self.dropout(mean)
+                var = self.dropout(var)
+
+        return mean, var
 
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(Encoder, self).__init__()
-        self.gc1 = GCNConv(nfeat, nhid)
-        self.gc2 = GCNConv(nhid, nhid)
+        self.gc1 = RobustGCNConv(nfeat, nhid, F.relu, F.relu, True, 0.5)
+        self.gc2 = RobustGCNConv(nhid, nhid, F.relu, F.relu, False, 0.5)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.gc1(x, edge_index))
-        x = F.dropout(x, self.dropout, training=self.training)
-        x = F.relu(self.gc2(x, edge_index))
-        return x
+        num_nodes = x.shape[0]
+        print(x.shape)
+        print(num_nodes)
+
+
+        #adj = sp.csr_matrix((edge_attr.cpu().numpy(), edge_index.cpu().numpy()), shape=[num_nodes, num_nodes])
+        #adj = sp.csr_matrix((np.ones(edge_index.shape[1]), edge_index.cpu().numpy()), shape=[num_nodes, num_nodes])
+
+        #adj = torch.sparse_coo_tensor(adj)
+
+
+        #adj = edge_index
+        adj = to_dense_adj(edge_index)[0]
+        print(adj.shape)
+
+        #for edge in edge_index:
+        #    adj[edge[0], edge[1]] = 1
+
+        adj0, adj1 = copy.deepcopy(adj), copy.deepcopy(adj)
+        mean = x
+        var = x
+
+        mean, var = self.gc1(mean, var=var, adj0=adj0, adj1=adj1)
+        mean, var = self.gc2(mean, var=var, adj0=adj0, adj1=adj1)
+
+        sample = torch.randn(var.shape).to(x.device)
+        output = mean + sample * torch.pow(var, 0.5)
+        print("OUTPUT SHAPE: ", output.shape)
+
+
+        #x = F.relu(self.gc1(x, edge_index))
+        #x = F.dropout(x, self.dropout, training=self.training)
+        #x = F.relu(self.gc2(x, edge_index))
+        return output
 
 
 class AttributeDecoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
         super(AttributeDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
-        self.gc2 = GCNConv(nhid, nfeat)
+        self.gc1 = RobustGCNConv(nhid, nhid, F.relu, F.relu, True, 0.5)
+        self.gc2 = RobustGCNConv(nhid, nfeat, F.relu, F.relu, False, 0.5)
+        #self.gc1 = GCNConv(nhid, nhid)
+        #self.gc2 = GCNConv(nhid, nfeat)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.gc1(x, edge_index))
-        x = F.dropout(x, self.dropout, training=self.training)
-        x = F.relu(self.gc2(x, edge_index))
-        return x
+        num_nodes = x.shape[0]
+        print(x.shape)
+        print(num_nodes)
+
+
+        adj = to_dense_adj(edge_index)[0]
+        print(adj.shape)
+
+        adj0, adj1 = copy.deepcopy(adj), copy.deepcopy(adj)
+        mean = x
+        var = x
+
+        mean, var = self.gc1(mean, var=var, adj0=adj0, adj1=adj1)
+        mean, var = self.gc2(mean, var=var, adj0=adj0, adj1=adj1)
+
+        sample = torch.randn(var.shape).to(x.device)
+        output = mean + sample * torch.pow(var, 0.5)
+
+
+        
+        #x = F.relu(self.gc1(x, edge_index))
+        #x = F.dropout(x, self.dropout, training=self.training)
+        #x = F.relu(self.gc2(x, edge_index))
+
+        return output
 
 
 class StructureDecoder(nn.Module):
     def __init__(self, nhid: int, dropout: float):
         super(StructureDecoder, self).__init__()
-        self.gc1 = GCNConv(nhid, nhid)
+        #self.gc1 = GCNConv(nhid, nhid)
+        self.gc1 = RobustGCNConv(nhid, nhid, F.relu, F.relu, True, 0.5)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.gc1(x, edge_index))
-        x = F.dropout(x, self.dropout, training=self.training)
-        x = x @ x.T
-        return x
+        num_nodes = x.shape[0]
+        print(x.shape)
+        print(num_nodes)
+
+
+        adj = to_dense_adj(edge_index)[0]
+        print(adj.shape)
+
+        adj0, adj1 = copy.deepcopy(adj), copy.deepcopy(adj)
+        mean = x
+        var = x
+
+        mean, var = self.gc1(mean, var=var, adj0=adj0, adj1=adj1)
+
+        sample = torch.randn(var.shape).to(x.device)
+        print(mean)
+        output = mean + sample * torch.pow(var, 0.5)
+        print(output)
+        output = output @ output.T
+
+
+        #x = F.relu(self.gc1(x, edge_index))
+        #x = F.dropout(x, self.dropout, training=self.training)
+        #x = x @ x.T
+        return output
 
 
 class Dominant(nn.Module):
@@ -82,15 +233,15 @@ class Dominant(nn.Module):
         self.top_k_AS = None
         self.top_k_AS_scores = None
         self.score = None
+        self.contamination = 0.1
+        self.threshold_ = None
+        self.last_struct_loss = None
+        self.last_feat_loss = None
 
-        # related to graphing - unique same as in jaccard dominant version
-        self.feature_loss_arr = []
-        self.structure_loss_arr =[]
-        self.loss_arr = []
-        self.aucroc_arr = []
-        self.aucroc_norm_arr = []
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+
+    
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor, num_nodes) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.shared_encoder(x, edge_index)
         x_hat = self.attr_decoder(x, edge_index)
         struct_reconstructed = self.struct_decoder(x, edge_index)
@@ -113,7 +264,7 @@ class Dominant(nn.Module):
             self.train()
             optimizer.zero_grad()
             # TODO: Normalize for every forward step
-            A_hat, X_hat = self.forward(attrs, edge_index)
+            A_hat, X_hat = self.forward(attrs, edge_index, None, num_nodes=attrs.shape[0])
             #self.adj_label = to_dense_adj(self.edge_index)[0]
             #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
             loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0], A_hat, attrs, X_hat, config['model']['alpha'])
@@ -126,25 +277,21 @@ class Dominant(nn.Module):
 
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
-                A_hat, X_hat = self.forward(attrs, edge_index)
+                A_hat, X_hat = self.forward(attrs, edge_index, None, num_nodes=attrs.shape[0])
                 loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
-                
                 self.score = loss.detach().cpu().numpy()
-                
-                # print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
-                # print(f"Epoch: {epoch:04d}, roc-auc: {roc_auc_score(self.label, self.score)}") ###################################### Experiencing problem here !!!!!!!!!!!!!!
-                aucroc_normalized = roc_auc_score(self.label, 1 / (1 + np.exp(-self.score.reshape(-1, 1))))
+                #self.threshold_ = np.percentile(self.score, 100 * (1 - self.contamination))
+                #pred = (self.score > self.threshold_)
+                #print(pred)
+                #print(self.label[33], self.label[65], self.label[88], self.label[89], self.label[90])
 
-                aucroc= roc_auc_score(self.label, self.score.reshape(-1, 1))
 
-                print(f"Epoch: {epoch:04d}, roc-auc: {aucroc}")
+                print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
+                if epoch == config['model']['epochs'] - 1:
+                    self.last_struct_loss = struct_loss.detach().cpu().numpy()
+                    self.last_feat_loss = feat_loss.detach().cpu().numpy()
 
-                # ------------ retrieve plotting values from each epoch
-                self.feature_loss_arr.append(feat_loss.detach().cpu().numpy())
-                self.structure_loss_arr.append(struct_loss.detach().cpu().numpy())
-                self.loss_arr.append(loss.detach().cpu().numpy())
-                self.aucroc_arr.append(aucroc)
-                self.aucroc_norm_arr.append(aucroc_normalized)
+             
 
 
 def normalize_adj(adj: np.ndarray) -> sp.coo_matrix:
@@ -161,6 +308,7 @@ def loss_func(adj: torch.Tensor, A_hat: torch.Tensor, attrs: torch.Tensor, X_hat
     attribute_reconstruction_errors = torch.sqrt(torch.sum(diff_attribute, 1))
     attribute_cost = torch.mean(attribute_reconstruction_errors)
 
+    # AHAT AND ADJ SHAPES:
     diff_structure = torch.pow(A_hat - adj, 2)
     structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 1))
     structure_cost = torch.mean(structure_reconstruction_errors)
