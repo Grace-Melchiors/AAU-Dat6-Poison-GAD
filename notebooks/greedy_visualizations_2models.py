@@ -1,4 +1,5 @@
 # %% 
+from torch_geometric.datasets import Planetoid
 from torch_geometric.utils import dense_to_sparse, to_undirected, to_dense_adj
 from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes, load_injected_dataset, get_anomaly_indexes, get_anomalies_with_label_1
 from gad_adversarial_robustness.poison.greedy import greedy_attack_with_statistics, greedy_attack_with_statistics_multi
@@ -34,11 +35,11 @@ USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
 USE_FIRST_K_TO_SELECT_TOP_K_TARGET = False
 
-TOP_K = 10
+TOP_K = 30
 
 SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
 
-DATASET_NAME = 'inj_cora'
+DATASET_NAME = 'Cora'
 print(DATASET_NAME)
 GRAPH_PARTITION_SIZE = None
 
@@ -54,10 +55,16 @@ if torch.cuda.is_available():
 else:
     config['model']['device'] = 'cpu'
 
+prior_labels = None
+
 if DATASET_NAME == 'inj_cora' or DATASET_NAME == 'inj_amazon':
     dataset: Data = load_data(DATASET_NAME)
+    dataset_planetoid = Planetoid(root='data', name='Cora')
+    prior_labels = dataset_planetoid[0].y
+
 elif DATASET_NAME == 'Wiki' or DATASET_NAME == 'Cora' or DATASET_NAME == 'Facebook':
     dataset: Data = load_injected_dataset(DATASET_NAME)
+    prior_labels = dataset.y
 
 if GRAPH_PARTITION_SIZE is not None:
     subset = torch.randperm(dataset.num_nodes)[:GRAPH_PARTITION_SIZE]
@@ -101,7 +108,7 @@ triple = np.array(triple)
 
 print("Before poison:")
 testingModel = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+                device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label, prior_labels=prior_labels)
 testingModel.to(config['model']['device'])
 testingModel.fit(config, new_edge_index=edge_index, attrs=attrs, verbose=False, top_k=TOP_K)
 
@@ -131,7 +138,7 @@ for target in target_list:
 
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 5
+budget = TOP_K * 10
 
 print("Starting attack...")
 """
@@ -145,7 +152,7 @@ _, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index = greedy_attack_with_statis
 """
 
 dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden_dim'], 'dropout': config['model']['dropout'],
-                'device': config['model']['device'], 'edge_index': edge_index, 'adj_label': adj_label, 'attrs': attrs, 'label': label}
+                'device': config['model']['device'], 'edge_index': edge_index, 'adj_label': adj_label, 'attrs': attrs, 'label': label, 'prior_labels': prior_labels}
 
 
 #_, AS, AS_DOM, AUC_DOM, ACC_DOM, perturb, edge_index = greedy_attack_with_statistics(
@@ -164,8 +171,8 @@ dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden
 #_, AS_2, AS_DOM_2, AUC_DOM_2, ACC_DOM_2, perturb_2, edge_index_2, CHANGE_IN_TARGET_NODE_AS_2 = greedy_attack_with_statistics(
 #    model, triple, dom_model_2, config, target_list, budget, print_stats = True)
 
-normal_dominant = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+#normal_dominant = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
+#                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
 
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
@@ -334,7 +341,7 @@ plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
 
 # %%
 plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
-plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
+plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "AUC by Budget", "Budget", "Anomaly Score")
 
 #print(AS_DOM2)
 

@@ -68,7 +68,7 @@ class StructureDecoder(nn.Module):
 
 class Dominant(nn.Module):
     def __init__(self, feat_size: int, hidden_size: int, dropout: float, device: str, 
-                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray):
+                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, prior_labels):
         super(Dominant, self).__init__()
         self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)

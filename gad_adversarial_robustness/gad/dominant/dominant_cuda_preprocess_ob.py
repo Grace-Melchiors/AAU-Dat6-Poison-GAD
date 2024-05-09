@@ -1,4 +1,6 @@
 from collections import Counter
+from torch_geometric.datasets import Planetoid
+
 from sklearn.preprocessing import MinMaxScaler
 from gad_adversarial_robustness.poison.greedy import target_node_mask
 
@@ -106,6 +108,32 @@ def _jaccard_similarity(a, b):
     J = intersection * 1.0 / (a.count_nonzero() + b.count_nonzero() - intersection)
     return J
 
+
+def label_similarity(label_a, label_b):
+    """
+    Compute the Jaccard similarity score between two sets of labels.
+
+    Args:
+        label_a (torch.Tensor): Tensor of labels for node A.
+        label_b (torch.Tensor): Tensor of labels for node B.
+
+    Returns:
+        float: Jaccard similarity score.
+    """
+    return int(label_a == label_b)
+
+def _feature_similarity(a, b):
+    # Check if a and b are the same, return 1 if they are
+    if a == b:
+        return 1
+    if np.array_equal(a, b):
+        return 1
+    
+    return 0
+    feature_simi = np.exp(-1 * np.square(np.linalg.norm(a - b)))
+    return feature_simi
+
+
 def get_jaccard(adjacency_matrix: torch.Tensor, features: torch.Tensor, threshold: int = 0.02):
     """Jaccard similarity edge filtering as proposed in Huijun Wu, Chen Wang, Yuriy Tyshetskiy, Andrew Docherty, Kai Lu,
     and Liming Zhu.  Adversarial examples for graph data: Deep insights into attack and defense.
@@ -180,7 +208,7 @@ class StructureDecoder(nn.Module):
 
 class Dominant(nn.Module):
     def __init__(self, feat_size: int, hidden_size: int, dropout: float, device: str, 
-                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray):
+                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, prior_labels):
         super(Dominant, self).__init__()
         self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
@@ -201,10 +229,11 @@ class Dominant(nn.Module):
         self._do_cache_adj_prep = True
         self.last_struct_loss = None
         self.last_feat_loss = None
+        self.prior_labels = prior_labels
 
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, label):
-        edge_index, edge_weight = self._preprocess_adjacency_matrix(edge_index, x, label)
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, label, prior_labels):
+        edge_index, edge_weight = self._preprocess_adjacency_matrix(edge_index, x, label, prior_labels)
         #x, edge_index, edge_weight = self._ensure_contiguousness(x, edge_index, edge_weight)
 
         x = self.shared_encoder(x, edge_index, edge_weight)
@@ -229,7 +258,7 @@ class Dominant(nn.Module):
             self.train()
             optimizer.zero_grad()
             # TODO: Normalize for every forward step
-            A_hat, X_hat, edge_index = self.forward(attrs, edge_index, self.label)
+            A_hat, X_hat, edge_index = self.forward(attrs, edge_index, self.label, self.prior_labels)
             #self.adj_label = to_dense_adj(self.edge_index)[0]
             #self.adj_label = self.adj_label + np.eye(self.adj_label.shape[0])
             loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0], A_hat, attrs, X_hat, config['model']['alpha'])
@@ -242,7 +271,7 @@ class Dominant(nn.Module):
 
             if (epoch % 10 == 0 and verbose) or epoch == config['model']['epochs'] - 1:
                 self.eval()
-                A_hat, X_hat, edge_index = self.forward(attrs, edge_index, self.label)
+                A_hat, X_hat, edge_index = self.forward(attrs, edge_index, self.label, prior_labels=self.prior_labels)
                 loss, struct_loss, feat_loss = loss_func(to_dense_adj(edge_index)[0].to(self.device), A_hat, attrs, X_hat, config['model']['alpha'])
                 self.score = loss.detach().cpu().numpy()
                 #self.threshold_ = np.percentile(self.score, 100 * (1 - self.contamination))
@@ -274,12 +303,14 @@ class Dominant(nn.Module):
 
     def _preprocess_adjacency_matrix(self,
                                      edge_idx: torch.Tensor,
-                                     x: torch.Tensor, label) -> Tuple[torch.Tensor, torch.Tensor]:
+                                     x: torch.Tensor, label, prior_labels) -> Tuple[torch.Tensor, torch.Tensor]:
         edge_weight = None
         edge_index = edge_idx
         prior_shape = edge_index.shape
         config_device = 'cuda'
         #print(f'Label {label}')
+        if prior_labels is not None:
+            print("NOT NONE DW")
 
         
 
@@ -319,7 +350,7 @@ class Dominant(nn.Module):
 
         
         AVG_AS = False
-        KTH_AS = 65 # 75 is good
+        KTH_AS = 75 # 75 is good
         if AVG_AS:
             average_anomaly_score = torch.mean(anomaly_scores)
         elif KTH_AS is not None:
@@ -331,7 +362,7 @@ class Dominant(nn.Module):
         deg = degree(edge_index[0])
         non_zero_tensor = deg[deg != 0]
         # Get mean of sum of nonzero
-        average_degree = non_zero_tensor.mean().item() - 1
+        average_degree = non_zero_tensor.mean().item() - 2
         #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
         # Currently with K = 30, we get 100 indexes.
 
@@ -360,15 +391,24 @@ class Dominant(nn.Module):
             subset, _, _, edge_mask = k_hop_subgraph(int(index), num_hops, edge_index)
 
             jaccard_similarities = []
+            feature_similarities = []
             for neighbor_idx in subset:
                 jaccard_similarity = _jaccard_similarity(x[index], x[neighbor_idx])
                 jaccard_similarities.append(jaccard_similarity)
 
+                feature_similarity = label_similarity(prior_labels[index], prior_labels[neighbor_idx])
+                feature_similarities.append(feature_similarity)
+
+                #feature_similarity = _feature_similarity(x[index].cpu().numpy(), x[neighbor_idx].cpu().numpy())
+                #feature_similarities.append(feature_similarity)
+                #print(f'FEATURE SIM: {feature_similarity}')
+
             # Convert to tensor
             jaccard_similarities = torch.tensor(jaccard_similarities).to(config_device)
+            feature_similarities= torch.tensor(feature_similarities).to(config_device)
 
             # Combine anomaly scores and Jaccard similarities
-            combined_scores = anomaly_scores[subset] + (100 * jaccard_similarities)
+            combined_scores = anomaly_scores[subset] + (100 * jaccard_similarities) + (0.35 * (feature_similarities))
 
             print("COMBINED SCORES")
             print(combined_scores)
@@ -382,8 +422,10 @@ class Dominant(nn.Module):
             print(f"Neighbourhood anomaly scores: {anomaly_scores[subset]}")
             normalized_scores = torch.sigmoid(combined_scores)
 
-            print("Normalized scores")
+            print("Normalized scores, subset and label")
             print(normalized_scores)
+            print(subset)
+            print(label[subset])
 
             for element in normalized_scores:
                 if element < THRESHOLD:
@@ -533,11 +575,18 @@ if __name__ == '__main__':
     #edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
+    print("DATASET DIR")
+    print(dir(dataset))
+    dataset_planetoid = Planetoid(root='data', name='Cora')
+    prior_labels = dataset_planetoid[0].y
+
+
 
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label, prior_labels=prior_labels)
     model.to(config['model']['device'])
     model.fit(config, verbose=False, new_edge_index=edge_index, attrs=attrs)
+
     
     ids = [2600, 1206, 2654, 1362, 214, 459, 1674, 1854, 980, 2386]
     target_nodes_as = target_node_mask(target_list=ids, tuple_list=model.score)
