@@ -245,7 +245,7 @@ class Dominant(nn.Module):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['model']['lr'])
         edge_index = new_edge_index
         edge_index = add_self_loops(edge_index)[0].to(self.device)
-        print("Fitting on edge index of shape: ", edge_index.shape)
+        #print("Fitting on edge index of shape: ", edge_index.shape)
 
         
         for epoch in range(config['model']['epochs']):
@@ -309,8 +309,7 @@ class Dominant(nn.Module):
         prior_shape = edge_index.shape
         config_device = 'cuda'
         #print(f'Label {label}')
-        if prior_labels is not None:
-            print("NOT NONE DW")
+        VERBOSE = False
 
         
 
@@ -366,7 +365,8 @@ class Dominant(nn.Module):
         #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
         # Currently with K = 30, we get 100 indexes.
 
-        print(f'Mean degree: {average_degree}')
+        if VERBOSE: 
+            print(f'Mean degree: {average_degree}')
         if AVG_AS:
             selected_nodes = (anomaly_scores < average_anomaly_score) & (deg > average_degree)
         elif KTH_AS is not None:
@@ -410,49 +410,56 @@ class Dominant(nn.Module):
             # Combine anomaly scores and Jaccard similarities
             combined_scores = anomaly_scores[subset] + (100 * jaccard_similarities) + (0.35 * (feature_similarities))
 
-            print("COMBINED SCORES")
-            print(combined_scores)
+            if VERBOSE: 
+                print("COMBINED SCORES")
+                print(combined_scores)
 
             # Threshold for edge removal decision
             THRESHOLD = 0.75  # Adjust as needed
 
             label[subset]
-            print(label[subset].shape)
+            #print(label[subset].shape)
 
-            print(f"Neighbourhood anomaly scores: {anomaly_scores[subset]}")
             normalized_scores = torch.sigmoid(combined_scores)
 
-            print("Normalized scores, subset and label")
-            print(normalized_scores)
-            print(subset)
-            print(label[subset])
+            if VERBOSE:
+                print(f"Neighbourhood anomaly scores: {anomaly_scores[subset]}")
+                print("Normalized scores, subset and label")
+                print(normalized_scores)
+                print(subset)
+                print(label[subset])
 
-            for element in normalized_scores:
-                if element < THRESHOLD:
-                    print("Element lower than threshold! ", element)
+            if VERBOSE:
+                for element in normalized_scores:
+                    if element < THRESHOLD:
+                        print("Element lower than threshold! ", element)
             #print(normalized_scores.shape)
             #neighborhood_similarity = torch.sparse.sum(normalized_scores, dim=1)
-            print("Below threshold")
             below_threshold_indices = torch.nonzero(normalized_scores < THRESHOLD)
-            print(below_threshold_indices)
-            print("Index of center nodes: ", index)
             indices_of_nodes_in_1_hop_below_threshold = subset[below_threshold_indices].cpu().numpy()
             #print("Indices of nodes in 1 hop: ", indices_of_nodes_in_1_hop_below_threshold)
             remove_own_index_mask = indices_of_nodes_in_1_hop_below_threshold != index
             masked_indices_of_nodes_in_1_hop_below_threshold = indices_of_nodes_in_1_hop_below_threshold[remove_own_index_mask]
-            print("Indices of all neighbors of center node below threshold: ", masked_indices_of_nodes_in_1_hop_below_threshold)
+            if VERBOSE:
+                print("Below threshold")
+                print(below_threshold_indices)
+                print("Index of center nodes: ", index)
+                print("Indices of all neighbors of center node below threshold: ", masked_indices_of_nodes_in_1_hop_below_threshold)
             # Remove from edge_index
             node1 = index
             for node2 in masked_indices_of_nodes_in_1_hop_below_threshold:
-                print(f'Jaccard: {_jaccard_similarity(x[node1], x[node2])}')
+                if VERBOSE:
+                    print(f'Jaccard: {_jaccard_similarity(x[node1], x[node2])}')
                 if label[node2] == 1:
                     count1+=1
-                    print(f"REMOVED EDGE TO ANOMALOUS NODE . From {node1} to {node2}")
+                    if VERBOSE:
+                        print(f"REMOVED EDGE TO ANOMALOUS NODE . From {node1} to {node2}")
                     added_edges.append(node2)
 
                 elif label[node1] == 1:
                     count2 +=1
-                    print(f"REMOVED EDGE FROM ANOMALOUS NODE. From {node1} to {node2}")
+                    if VERBOSE:
+                        print(f"REMOVED EDGE FROM ANOMALOUS NODE. From {node1} to {node2}")
                     added_edges.append(node1)
                 else:
                     count3 +=1
@@ -463,7 +470,8 @@ class Dominant(nn.Module):
                 for i in range(NUM_EDGES_TO_ADD_TO_ANOMALOUS):
                     source = node2
                     target = np.random.choice(top_indices.cpu().numpy())
-                    print("Adding edge to node with AS: ", anomaly_scores[target])
+                    if VERBOSE: 
+                        print("Adding edge to node with AS: ", anomaly_scores[target])
                     new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device='cuda')
                     edge_index = torch.cat([edge_index, new_edge], dim=1)
 
@@ -477,28 +485,32 @@ class Dominant(nn.Module):
             self.training
             and self._do_cache_adj_prep
         ):
-            print("CACHING")
+            if VERBOSE:
+                print("CACHING")
             self._adj_preped = (edge_index, edge_weight)
         
+
         print("Total removed to anomalous: ", count1)
         print("Total removed from anomalous: ", count2)
         print("Total other removed: ", count3)
-        print("The kth threshold was: ", kth_threshold_score)
-        print("The average degree was: ", average_degree)
+
+        if VERBOSE:
+            print("The kth threshold was: ", kth_threshold_score)
+            print("The average degree was: ", average_degree)
 
 
-        #elapsed = end - start
-        #print(f"Time difference: {elapsed:0.4f} seconds")
-        print("prior edge_index shape: ", prior_shape)
-        print("new edge_index shape: ", edge_index.shape)
+            #elapsed = end - start
+            #print(f"Time difference: {elapsed:0.4f} seconds")
+            print("prior edge_index shape: ", prior_shape)
+            print("new edge_index shape: ", edge_index.shape)
 
         index_counts = Counter(added_edges)
         #tensor_array = edge_weight.cpu().numpy()
         #np.savetxt('edgeweight.csv', tensor_array, delimiter=',', fmt='%d')
 
-
-        for index, count in index_counts.items():
-            print(f"Removed {count} edges from node with index {index}")
+        if VERBOSE: 
+            for index, count in index_counts.items():
+                print(f"Removed {count} edges from node with index {index}")
 
         return edge_index, edge_weight
                
@@ -578,6 +590,9 @@ if __name__ == '__main__':
     print("DATASET DIR")
     print(dir(dataset))
     dataset_planetoid = Planetoid(root='data', name='Cora')
+    print("SHAPE")
+    print(dataset_planetoid[0])
+    print(dataset_planetoid.edge_index.shape)
     prior_labels = dataset_planetoid[0].y
 
 

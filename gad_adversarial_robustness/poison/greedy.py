@@ -472,13 +472,13 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, dom_par
             print('DOMINANT (regular): Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_1, 
                                 '--- DOM AUC:', AUC_DOM_temp_1, '--- TARGET DOM ACC:', ACC_DOM_temp_1)
             if DOMINANT_model_2 is not None:
-                print('DOMINANT w/ SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
+                print('DOMINANT w/ our proposal: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
                                     '--- DOM AUC:', AUC_DOM_temp_2, '--- TARGET DOM ACC:', ACC_DOM_temp_2)
             if DOMINANT_model_3 is not None:
-                print('DOMINANT w/ Jaccard Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_3, 
+                print('DOMINANT w/ SM Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_3, 
                                     '--- DOM AUC:', AUC_DOM_temp_3, '--- TARGET DOM ACC:', ACC_DOM_temp_3)
             if DOMINANT_model_4 is not None:
-                print('DOMINANT w/ Jaccard and SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_4, 
+                print('DOMINANT w/ Jaccard: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_4, 
                                     '--- DOM AUC:', AUC_DOM_temp_4, '--- TARGET DOM ACC:', ACC_DOM_temp_4)
     AS = np.array(AS)    
 

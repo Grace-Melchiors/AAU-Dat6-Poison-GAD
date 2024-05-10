@@ -122,7 +122,7 @@ class StructureDecoder(nn.Module):
 
 class Dominant(nn.Module):
     def __init__(self, feat_size: int, hidden_size: int, dropout: float, device: str, 
-                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray):
+                 edge_index: torch.Tensor, adj_label: torch.Tensor, attrs: torch.Tensor, label: np.ndarray, prior_labels = None):
         super(Dominant, self).__init__()
         self.device = device
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
@@ -317,7 +317,7 @@ if __name__ == '__main__':
     attrs = dataset.x.to(config['model']['device'])
 
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label, prior_labels=None)
     model.to(config['model']['device'])
     model.fit(config, verbose=True, new_edge_index=edge_index, attrs=attrs)
     
