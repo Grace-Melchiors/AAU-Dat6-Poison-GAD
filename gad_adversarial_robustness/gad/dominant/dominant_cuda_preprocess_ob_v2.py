@@ -33,51 +33,36 @@ from torch_geometric.nn import Node2Vec
 from torch_geometric.utils import to_networkx
 from pygod.generator import gen_contextual_outlier, gen_structural_outlier
 from torch_geometric.transforms import normalize_features
-
-def generate_graph_embeddings(edge_index, num_nodes, embedding_dim=64, walk_length=20, context_size=10, walks_per_node=10):
-        # Convert edge_index to networkx graph
-        nx_graph = to_networkx(edge_index)
-
-        # Initialize Node2Vec model
-        model = Node2Vec(nx_graph, embedding_dim=embedding_dim, walk_length=walk_length, context_size=context_size,
-                        walks_per_node=walks_per_node)
-
-        # Train Node2Vec model
-        model.train()
-
-        # Extract node embeddings
-        embeddings = model.get_embedding()
-
-        # Convert embeddings to PyTorch tensor
-        embeddings_tensor = torch.tensor(embeddings)
-
-        return embeddings_tensor
-
-
-
 from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS, get_OddBall_AS_simple
 
-def modified_drop_dissimilar_edges(features, adj, threshold: int = 0.1):
-    if not sp.issparse(adj):
-        adj = sp.csr_matrix(adj)
-    modified_adj = adj.copy().tolil()
+def modified_drop_dissimilar_edges(features, edge_index, threshold: float = 0.01):
+    modified_edge_index = edge_index.clone()
+    row, col = modified_edge_index
+    mask = torch.ones_like(row, dtype=torch.bool)
 
-    edges = np.array(modified_adj.nonzero()).T
-    removed_cnt = 0
-    features = sp.csr_matrix(features)
-    for edge in edges:
-        n1 = edge[0]
-        n2 = edge[1]
-        if n1 > n2:
-            continue
+    counter = 0
+    for i in range(row.size(0)):
+        n1 = edge_index[0][i].item()
+        n2 = edge_index[1][i].item()
 
-        J = _jaccard_similarity(features[n1], features[n2])
+        #if n1 > n2:
+        #    continue
 
-        if J <= threshold:
-            modified_adj[n1, n2] = 0
-            modified_adj[n2, n1] = 0
-            removed_cnt += 1
-    return modified_adj
+        src_features = features[n1]
+        dst_features = features[n2]
+
+        J = _jaccard_similarity(src_features, dst_features)
+
+        if J >= 0.01:
+            mask[i] = False
+            counter += 1
+
+    modified_edge_index = modified_edge_index[:, mask]
+    print("unmodified_edge_index: ", edge_index.shape)
+    print("modified_edge_index: ", modified_edge_index.shape)
+    print("counter: ", counter)
+
+    return modified_edge_index
 
 def drop_dissimilar_edges(features, adj, threshold: int = 0.1):
     if not sp.issparse(adj):
@@ -160,8 +145,9 @@ def get_jaccard(adjacency_matrix: torch.Tensor, features: torch.Tensor, threshol
         features = features.to_dense()
 
     modified_adj = sp.coo_matrix((values.numpy(), (row.numpy(), col.numpy())), (N, N))
-    modified_adj = drop_dissimilar_edges(features.cpu().numpy(), modified_adj, threshold=threshold)
+    modified_adj = modified_drop_dissimilar_edges(features.cpu().numpy(), modified_adj, threshold=threshold)
     modified_adj = torch.sparse.FloatTensor(*from_scipy_sparse_matrix(modified_adj)).to(adjacency_matrix.device)
+    print("MODIFIED ADJ SHAPE: ", modified_adj.shape)
     return modified_adj
 
 
@@ -247,6 +233,7 @@ class Dominant(nn.Module):
         edge_index = add_self_loops(edge_index)[0].to(self.device)
         #print("Fitting on edge index of shape: ", edge_index.shape)
 
+
         
         for epoch in range(config['model']['epochs']):
             #adj, adj_label = prepare_adj_and_adj_label(edge_index=self.edge_index)
@@ -279,6 +266,8 @@ class Dominant(nn.Module):
                 #print(pred)
                 #print(self.label[33], self.label[65], self.label[88], self.label[89], self.label[90])
 
+                print("LABEL NAN ", torch.isnan(label).any())
+                print("SCORE NAN ", torch.isnan(torch.tensor(self.score)).any())
                 print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
                 if epoch == config['model']['epochs'] - 1:
                     self.last_struct_loss = struct_loss.detach().cpu().numpy()
@@ -327,15 +316,15 @@ class Dominant(nn.Module):
         edge_index, edge_weight = adj.indices(), adj.values()
         del adj
         """
-        #print(edge_weight)
+
         
         num_nodes = x.size(0)
         SAVED = False
 
 
-        #if self.training and self._adj_preped is not None:
-            
+        pruned_edge_index = modified_drop_dissimilar_edges(x, edge_index, threshold=0.01)
 
+        #if self.training and self._adj_preped is not None:
         if SAVED == False:
             anomaly_scores = get_OddBall_AS_simple(edge_index, num_nodes, device=config_device)
             anomaly_scores = torch.Tensor(anomaly_scores).to(config_device)
@@ -343,11 +332,14 @@ class Dominant(nn.Module):
         elif SAVED == True:
             anomaly_scores = torch.load('anomaly_scores.pt')
 
+   
+
         # Select nodes with above avg. anomaly scores. Needed for later when we add edges
-        avg_anomaly_score = torch.mean(anomaly_scores)
-        above_avg_nodes_indices = torch.nonzero(anomaly_scores > avg_anomaly_score).squeeze().cpu().numpy()
 
         
+        avg_anomaly_score = torch.mean(anomaly_scores)
+        above_avg_nodes_indices = torch.nonzero(anomaly_scores > avg_anomaly_score).squeeze().cpu().numpy()
+       
         AVG_AS = False
         KTH_AS = 75 # 75 is good
         if AVG_AS:
@@ -358,10 +350,12 @@ class Dominant(nn.Module):
             kth_threshold_score, _ = torch.kthvalue(anomaly_scores, k)
             print(f'Kth score: {kth_threshold_score}')
 
-        deg = degree(edge_index[0])
+        deg = degree(pruned_edge_index[0], num_nodes=num_nodes)
         non_zero_tensor = deg[deg != 0]
         # Get mean of sum of nonzero
-        average_degree = non_zero_tensor.mean().item() - 2
+        average_degree = non_zero_tensor.mean().item()
+        print("AVG DEG ", average_degree)
+        #average_degree = 1
         #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
         # Currently with K = 30, we get 100 indexes.
 
@@ -370,6 +364,7 @@ class Dominant(nn.Module):
         if AVG_AS:
             selected_nodes = (anomaly_scores < average_anomaly_score) & (deg > average_degree)
         elif KTH_AS is not None:
+            print("SHAPE OF KTHTHRESHOLD AND DEG ", anomaly_scores.shape, deg.shape)
             selected_nodes = (anomaly_scores < kth_threshold_score) & (deg > average_degree)
         else:
             raise ValueError("Either AVG_AS or KTH_AS must be specified")
@@ -595,6 +590,8 @@ if __name__ == '__main__':
     print(dataset_planetoid.edge_index.shape)
     prior_labels = dataset_planetoid[0].y
 
+    dense_adj = to_dense_adj(edge_index)[0].detach().cpu().numpy()
+    print("LOL DENSE: ", dense_adj.shape)
 
 
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
