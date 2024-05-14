@@ -248,7 +248,7 @@ def load_injected_dataset(dataset_name, seed = 123):
     data = dataset[0]
 
     num_nodes_to_inject = math.ceil((data.num_nodes / 100) * 5)
-    num_nodes_per_clique = 7
+    num_nodes_per_clique = 15
     num_cliques = (num_nodes_to_inject // 2) // num_nodes_per_clique
     num_contextual_outliers = num_nodes_to_inject - num_cliques * num_nodes_per_clique
 

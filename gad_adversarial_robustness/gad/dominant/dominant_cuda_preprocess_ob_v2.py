@@ -266,8 +266,8 @@ class Dominant(nn.Module):
                 #print(pred)
                 #print(self.label[33], self.label[65], self.label[88], self.label[89], self.label[90])
 
-                print("LABEL NAN ", torch.isnan(label).any())
-                print("SCORE NAN ", torch.isnan(torch.tensor(self.score)).any())
+                #print("LABEL NAN ", torch.isnan(label).any())
+                #print("SCORE NAN ", torch.isnan(torch.tensor(self.score)).any())
                 print(f"Epoch: {epoch:04d}, Auc: {roc_auc_score(self.label.detach().cpu().numpy(), self.score)}")
                 if epoch == config['model']['epochs'] - 1:
                     self.last_struct_loss = struct_loss.detach().cpu().numpy()
@@ -341,7 +341,7 @@ class Dominant(nn.Module):
         above_avg_nodes_indices = torch.nonzero(anomaly_scores > avg_anomaly_score).squeeze().cpu().numpy()
        
         AVG_AS = False
-        KTH_AS = 75 # 75 is good
+        KTH_AS = 50 # 75 is good
         if AVG_AS:
             average_anomaly_score = torch.mean(anomaly_scores)
         elif KTH_AS is not None:
@@ -354,6 +354,7 @@ class Dominant(nn.Module):
         non_zero_tensor = deg[deg != 0]
         # Get mean of sum of nonzero
         average_degree = non_zero_tensor.mean().item()
+        average_degree = 0.9
         print("AVG DEG ", average_degree)
         #average_degree = 1
         #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
@@ -383,14 +384,10 @@ class Dominant(nn.Module):
         #print(true_indices, true_indices.shape)
         num_hops = 1
         for index in true_indices.cpu().numpy():
-            subset, _, _, edge_mask = k_hop_subgraph(int(index), num_hops, edge_index)
+            subset, _, _, edge_mask = k_hop_subgraph(int(index), num_hops, pruned_edge_index)
 
-            jaccard_similarities = []
             feature_similarities = []
             for neighbor_idx in subset:
-                jaccard_similarity = _jaccard_similarity(x[index], x[neighbor_idx])
-                jaccard_similarities.append(jaccard_similarity)
-
                 feature_similarity = label_similarity(prior_labels[index], prior_labels[neighbor_idx])
                 feature_similarities.append(feature_similarity)
 
@@ -399,11 +396,10 @@ class Dominant(nn.Module):
                 #print(f'FEATURE SIM: {feature_similarity}')
 
             # Convert to tensor
-            jaccard_similarities = torch.tensor(jaccard_similarities).to(config_device)
             feature_similarities= torch.tensor(feature_similarities).to(config_device)
 
             # Combine anomaly scores and Jaccard similarities
-            combined_scores = anomaly_scores[subset] + (100 * jaccard_similarities) + (0.35 * (feature_similarities))
+            combined_scores = anomaly_scores[subset] + (0.35 * (feature_similarities))
 
             if VERBOSE: 
                 print("COMBINED SCORES")
@@ -416,6 +412,7 @@ class Dominant(nn.Module):
             #print(label[subset].shape)
 
             normalized_scores = torch.sigmoid(combined_scores)
+            edge_index
 
             if VERBOSE:
                 print(f"Neighbourhood anomaly scores: {anomaly_scores[subset]}")
@@ -423,11 +420,10 @@ class Dominant(nn.Module):
                 print(normalized_scores)
                 print(subset)
                 print(label[subset])
-
-            if VERBOSE:
                 for element in normalized_scores:
                     if element < THRESHOLD:
                         print("Element lower than threshold! ", element)
+
             #print(normalized_scores.shape)
             #neighborhood_similarity = torch.sparse.sum(normalized_scores, dim=1)
             below_threshold_indices = torch.nonzero(normalized_scores < THRESHOLD)
@@ -460,6 +456,15 @@ class Dominant(nn.Module):
                     count3 +=1
 
                 top_indices = torch.argsort(anomaly_scores, descending=True)[:int(0.2 * len(anomaly_scores))]
+                #print("AVG AS: ", avg_anomaly_score)
+
+    
+                if anomaly_scores[node2] < avg_anomaly_score - 0.6:
+                    print("REMOVING")
+                    edges_to_remove = ((edge_index[0] == node1) & (edge_index[1] == node2)) | ((edge_index[0] == node2) & (edge_index[1] == node1))
+                    edge_index = edge_index[:, ~edges_to_remove]
+
+
 
                 NUM_EDGES_TO_ADD_TO_ANOMALOUS = 4
                 for i in range(NUM_EDGES_TO_ADD_TO_ANOMALOUS):

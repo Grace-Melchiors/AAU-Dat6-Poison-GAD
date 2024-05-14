@@ -22,6 +22,7 @@ from gad_adversarial_robustness.gad.dominant.dominant_cuda_medoid import Dominan
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess import Dominant as DominantPP
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_and_medoid import Dominant as DominantAggPP
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob import Dominant as DominantNew
+from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob_v2 import Dominant as DominantNew2
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.data import Data
 from gad_adversarial_robustness.poison.greedy import multiple_AS
@@ -39,7 +40,7 @@ TOP_K = 10
 
 SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
 
-DATASET_NAME = 'Cora'
+DATASET_NAME = 'inj_cora'
 print(DATASET_NAME)
 GRAPH_PARTITION_SIZE = None
 
@@ -138,7 +139,7 @@ for target in target_list:
 
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 6
+budget = TOP_K * 4
 
 print("Starting attack...")
 """
@@ -176,7 +177,9 @@ dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden
 
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
-    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=DominantAgg, DOMINANT_model_4=DominantPP)
+    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=DominantNew2)
+#_, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
+#    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=DominantAgg, DOMINANT_model_4=DominantPP)
 
 # %%
 torch.save(edge_index_1, 'edge_index_10_50.pt')
@@ -205,9 +208,9 @@ def plot_scores(scores1, scores2, title='AUC Scores by Budget', xlabel='Budget',
     plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
     #plt.plot(budgets, scores, marker='o', linestyle='-', color='b')  # Plotting the scores
     plt.plot(budgets, scores1, marker='o', linestyle='-', color='b', label='Unmodified DOMINANT')  # Plotting the first set of scores
-    plt.plot(budgets, scores2, marker='o', linestyle='-', color='r', label='Our proposal')  # Plotting the second set of scores
+    plt.plot(budgets, scores2, marker='o', linestyle='-', color='r', label='Our proposal v1')  # Plotting the second set of scores
     if scores3 is not None:
-        plt.plot(budgets, scores3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Jaccard')  # Plotting the third set of scores
+        plt.plot(budgets, scores3, marker='o', linestyle='-', color='g', label='Our proposal v2')  # Plotting the third set of scores
     if scores4 is not None:
         plt.plot(budgets, scores4, marker='o', linestyle='-', color='y', label='DOMINANT w/ Jaccard & medoid')  # Plotting the third set of scores
 
@@ -340,8 +343,8 @@ plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "Our proposal")
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
 
 # %%
-plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score", AS_DOM_1[3], AS_DOM_1[2])
-plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "AUC by Budget", "Budget", "Anomaly Score", AUC_DOM_1[3])
+plot_scores(AS_DOM_1[0][:35], AS_DOM_1[1][:35], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score", AS_DOM_1[2][:35])
+plot_scores(AUC_DOM_1[0][:35], AUC_DOM_1[1][:35], "AUC by Budget", "Budget", "Anomaly Score", AUC_DOM_1[2][:35])
 
 #print(AS_DOM2)
 
