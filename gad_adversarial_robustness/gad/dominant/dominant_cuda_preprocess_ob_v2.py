@@ -304,14 +304,18 @@ class Dominant(nn.Module):
         num_nodes = x.size(0)
         SAVED = False
 
+        GAMMA = 0.35
+        JACCARD_THRESHOLD = 0.01
+        THRESHOLD = 0.76
+        NUM_EDGES_TO_ADD_TO_ANOMALOUS = 4
 
-        pruned_edge_index = modified_drop_dissimilar_edges(x, edge_index, threshold=0.01)
+        pruned_edge_index = modified_drop_dissimilar_edges(x, edge_index, threshold=JACCARD_THRESHOLD)
 
         #if self.training and self._adj_preped is not None:
         if SAVED == False:
             anomaly_scores = get_OddBall_AS_simple(edge_index, num_nodes, device=config_device)
             anomaly_scores = torch.Tensor(anomaly_scores).to(config_device)
-            #torch.save(anomaly_scores, 'anomaly_scores.pt')
+            torch.save(anomaly_scores, 'anomaly_scores.pt')
         elif SAVED == True:
             anomaly_scores = torch.load('anomaly_scores.pt')
 
@@ -376,14 +380,13 @@ class Dominant(nn.Module):
             feature_similarities= torch.tensor(feature_similarities).to(config_device)
 
             # Combine anomaly scores and Jaccard similarities
-            combined_scores = anomaly_scores[subset] + (0.35 * (feature_similarities))
+            combined_scores = anomaly_scores[subset] + (GAMMA * (feature_similarities))
 
             if VERBOSE: 
                 print("COMBINED SCORES")
                 print(combined_scores)
 
             # Threshold for edge removal decision
-            THRESHOLD = 0.75  # Adjust as needed
 
             normalized_scores = torch.sigmoid(combined_scores)
 
@@ -440,7 +443,6 @@ class Dominant(nn.Module):
 
 
 
-                NUM_EDGES_TO_ADD_TO_ANOMALOUS = 4
                 for i in range(NUM_EDGES_TO_ADD_TO_ANOMALOUS):
                     source = node2
                     target = np.random.choice(top_indices.cpu().numpy())
