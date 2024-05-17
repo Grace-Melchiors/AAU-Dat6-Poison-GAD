@@ -1,4 +1,6 @@
 from torch_sparse import SparseTensor 
+from torch_geometric.datasets import Planetoid
+
 import math
 import torch
 from typing import Union
@@ -240,12 +242,13 @@ def get_anomalies_with_label_1(scores, labels):
 
 def load_injected_dataset(dataset_name, seed = 123):
 
-    dataset = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
+    #dataset = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
+    dataset = Planetoid(root='data/', name=dataset_name)
 
     data = dataset[0]
 
     num_nodes_to_inject = math.ceil((data.num_nodes / 100) * 5)
-    num_nodes_per_clique = 8
+    num_nodes_per_clique = 15
     num_cliques = (num_nodes_to_inject // 2) // num_nodes_per_clique
     num_contextual_outliers = num_nodes_to_inject - num_cliques * num_nodes_per_clique
 

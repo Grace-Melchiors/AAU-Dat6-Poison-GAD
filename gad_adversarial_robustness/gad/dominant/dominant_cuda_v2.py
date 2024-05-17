@@ -18,6 +18,8 @@ from torch_geometric.nn import GCNConv
 from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
 
+torch.manual_seed(123)
+
 def eval_precision_at_k(label, score, k=None):
     if k is None:
         k = sum(label)
@@ -61,7 +63,6 @@ class StructureDecoder(nn.Module):
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.gc1(x, edge_index))
         x = F.dropout(x, self.dropout, training=self.training)
-        print("x shape: ", x.shape)
         x = x @ x.T
         return x
 
@@ -207,13 +208,14 @@ if __name__ == '__main__':
     from torch_geometric.utils import to_torch_sparse_tensor, dense_to_sparse
     #edge_index = to_torch_sparse_tensor(dataset.edge_index.to(config['model']['device']))
     edge_index = dataset.edge_index.to(config['model']['device'])
-    edge_index = torch.load('./notebooks/100_budget_greedy_edge_index.pt').to(config['model']['device'])
+    #edge_index = torch.load('./notebooks/100_budget_greedy_edge_index.pt').to(config['model']['device'])
     #edge_index = dense_to_sparse(torch.tensor(adj))[0].to(config['model']['device'])
     label = torch.Tensor(dataset.y.bool()).to(config['model']['device'])
     attrs = dataset.x.to(config['model']['device'])
+    
 
     model = Dominant(feat_size=attrs.size(1), hidden_size=config['model']['hidden_dim'], dropout=config['model']['dropout'],
-                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label)
+                     device=config['model']['device'], edge_index=edge_index, adj_label=adj_label, attrs=attrs, label=label, prior_labels=None)
     model.to(config['model']['device'])
-    model.fit(config, verbose=True, new_edge_index=edge_index, attrs=attrs)
+    model.fit(config, verbose=False, new_edge_index=edge_index, attrs=attrs)
     

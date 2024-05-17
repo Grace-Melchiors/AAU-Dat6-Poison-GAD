@@ -22,24 +22,28 @@ from gad_adversarial_robustness.gad.dominant.dominant_cuda_medoid import Dominan
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess import Dominant as DominantPP
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_and_medoid import Dominant as DominantAggPP
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob import Dominant as DominantNew
+from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob_v2 import Dominant as DominantNew2
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.data import Data
 from gad_adversarial_robustness.poison.greedy import multiple_AS
 from gad_adversarial_robustness.utils.graph_utils import get_n_anomaly_indexes
 
+
 from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
 from pygod.detector import DOMINANT
 
+torch.manual_seed(123)
 
 USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
 USE_FIRST_K_TO_SELECT_TOP_K_TARGET = False
 
-TOP_K = 30
+TOP_K = 15
+SAMPLE_RANDOM_TOP = True
 
 SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
+DATASET_NAME = 'inj_cora'
 
-DATASET_NAME = 'Cora'
 print(DATASET_NAME)
 GRAPH_PARTITION_SIZE = None
 
@@ -63,8 +67,7 @@ if DATASET_NAME == 'inj_cora' or DATASET_NAME == 'inj_amazon':
     prior_labels = dataset_planetoid[0].y
 
 elif DATASET_NAME == 'Wiki' or DATASET_NAME == 'Cora' or DATASET_NAME == 'Facebook':
-    dataset: Data = load_injected_dataset(DATASET_NAME)
-    prior_labels = dataset.y
+    dataset, prior_labels = load_injected_dataset(DATASET_NAME)
 
 if GRAPH_PARTITION_SIZE is not None:
     subset = torch.randperm(dataset.num_nodes)[:GRAPH_PARTITION_SIZE]
@@ -124,7 +127,10 @@ elif USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET:
     print("ALL:")
     get_anomalies_with_label_1(target_list_as, labels_np)
     print("NOT ALL:")
-    target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True)
+    if SAMPLE_RANDOM_TOP:
+        target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True, random_top=True)
+    else: 
+        target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True, random_top=False)
     print(f'Target list: {target_list}')
 elif USE_FIRST_K_TO_SELECT_TOP_K_TARGET:
     anomaly_list = get_n_anomaly_indexes(y_binary, TOP_K)
@@ -138,7 +144,7 @@ for target in target_list:
 
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 10
+budget = TOP_K * 6
 
 print("Starting attack...")
 """
@@ -176,7 +182,9 @@ dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden
 
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
-    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=None, DOMINANT_model_4=None)
+    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew2)
+#_, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
+#    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=DominantAgg, DOMINANT_model_4=DominantPP)
 
 # %%
 torch.save(edge_index_1, 'edge_index_10_50.pt')
@@ -205,9 +213,9 @@ def plot_scores(scores1, scores2, title='AUC Scores by Budget', xlabel='Budget',
     plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
     #plt.plot(budgets, scores, marker='o', linestyle='-', color='b')  # Plotting the scores
     plt.plot(budgets, scores1, marker='o', linestyle='-', color='b', label='Unmodified DOMINANT')  # Plotting the first set of scores
-    plt.plot(budgets, scores2, marker='o', linestyle='-', color='r', label='Our proposal')  # Plotting the second set of scores
+    plt.plot(budgets, scores2, marker='o', linestyle='-', color='r', label='Our proposal v1')  # Plotting the second set of scores
     if scores3 is not None:
-        plt.plot(budgets, scores3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Jaccard')  # Plotting the third set of scores
+        plt.plot(budgets, scores3, marker='o', linestyle='-', color='g', label='Our proposal v2')  # Plotting the third set of scores
     if scores4 is not None:
         plt.plot(budgets, scores4, marker='o', linestyle='-', color='y', label='DOMINANT w/ Jaccard & medoid')  # Plotting the third set of scores
 
@@ -273,9 +281,9 @@ def plot_score_percentage_change(scores1, scores2, title='Percentage Change of S
     plt.plot(budgets, percentage_changes1, marker='o', linestyle='-', color='b', label='Unmodified DOMINANT')
     plt.plot(budgets, percentage_changes2, marker='o', linestyle='-', color='r', label='Our proposal')
     if scores3 is not None:
-        plt.plot(budgets, percentage_changes3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Jaccard')
+        plt.plot(budgets, percentage_changes3, marker='o', linestyle='-', color='g', label='DOMINANT w/ Soft Medoid')
     if scores4 is not None:
-        plt.plot(budgets, percentage_changes4, marker='o', linestyle='-', color='y', label='DOMINANT w/ Jaccard and soft medoid')
+        plt.plot(budgets, percentage_changes4, marker='o', linestyle='-', color='y', label='DOMINANT w/ Jaccard')
 
     # Adding some flair to the plot
     plt.title(title)
@@ -337,7 +345,7 @@ def plot_anomaly_scores(anomaly_scores, model_name):
 
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[0], "Unmodified DOMINANT")
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "Our proposal")
-plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
+#plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
 
 # %%
 plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
@@ -348,7 +356,7 @@ plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "AUC by Budget", "Budget", "Anomaly Scor
 #AUC_DOM3 = [0.8164340495122089, 0.8177578525912143, 0.8156445609879884, 0.816068911069757, 0.8151440816556703, 0.8127586984717758, 0.8129983646309142, 0.8126825692212261, 0.8127192240455648, 0.8119692099475553, 0.8119748491512998, 0.8100039474426212, 0.8085321152653245, 0.8071307731348334, 0.8061157164608357, 0.80334686742232, 0.8060818812383691, 0.8045423786161394, 0.7949275362318842, 0.8053600631590819, 0.805606778322901, 0.8105241639880449, 0.8179101110923138, 0.8117098065753114, 0.8077835109682512, 0.8026758021767327, 0.8088958439068404, 0.7987678339818417, 0.8021358484182033, 0.7943565668527603, 0.7997730220492867]
 #AS_DOM3 = [42.31573, 42.33776, 42.281334, 42.30277, 42.298187, 42.23702, 42.300823, 42.258064, 42.257446, 42.23358, 42.220634, 42.19507, 42.051605, 41.77787, 41.589165, 41.44771, 41.76278, 41.445587, 41.004654, 41.27797, 40.98237, 41.213097, 41.853844, 40.96518, 40.93633, 40.30526, 40.568085, 39.9445, 40.14162, 39.60869, 39.669918]
 plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "AUC-Score by Budget", "Budget", "Anomaly Score", scores3=AUC_DOM_1[2], scores4=AUC_DOM_1[3])
-plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score", scores3=AS_DOM_1[2])
+plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score", scores3=AS_DOM_1[3])
 # %%
 
 # %%

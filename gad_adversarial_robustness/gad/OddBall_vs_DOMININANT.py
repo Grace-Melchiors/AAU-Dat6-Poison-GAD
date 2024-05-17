@@ -183,7 +183,7 @@ def get_OddBall_AS_simple(adj, amount_of_nodes, device, OddBall_AS = OddBall_AS)
     # 'triple' is a list that will store the perturbed triples during the poisoning process.
     # Each triple represents an edge modification in the form of (node1, node2, edge_label).
     
-    dense_adj = to_dense_adj(adj)[0].detach().cpu().numpy()
+    dense_adj = to_dense_adj(adj, max_num_nodes=amount_of_nodes)[0].detach().cpu().numpy()
     #dense_adj = adj.to_dense()  #Fill in zeroes where there are no edges
     
     triple = []

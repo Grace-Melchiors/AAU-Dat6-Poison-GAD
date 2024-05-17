@@ -166,12 +166,13 @@ def update_edge_index(edge_index, changes, device):
     for change in changes:
         source, target, weight = change
         
-        if weight == 0:  # Add edge
-            new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device=device)
-            updated_edge_index = torch.cat([updated_edge_index, new_edge], dim=1)
-        elif weight == 1.0:  # Remove edge
+        if weight == 1.0:  # Remove edge
             mask = ~(((updated_edge_index[0] == source) & (updated_edge_index[1] == target)) | ((updated_edge_index[0] == target) & (updated_edge_index[1] == source)))
             updated_edge_index = updated_edge_index[:, mask]
+        else:  # Add edge
+            new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device=device)
+            updated_edge_index = torch.cat([updated_edge_index, new_edge], dim=1)
+
 
     return updated_edge_index
 
@@ -472,13 +473,13 @@ def greedy_attack_with_statistics_multi(model, triple, DOMINANT_model_1, dom_par
             print('DOMINANT (regular): Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_1, 
                                 '--- DOM AUC:', AUC_DOM_temp_1, '--- TARGET DOM ACC:', ACC_DOM_temp_1)
             if DOMINANT_model_2 is not None:
-                print('DOMINANT w/ SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
+                print('DOMINANT w/ our proposal: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_2, 
                                     '--- DOM AUC:', AUC_DOM_temp_2, '--- TARGET DOM ACC:', ACC_DOM_temp_2)
             if DOMINANT_model_3 is not None:
-                print('DOMINANT w/ Jaccard Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_3, 
+                print('DOMINANT w/ SM Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_3, 
                                     '--- DOM AUC:', AUC_DOM_temp_3, '--- TARGET DOM ACC:', ACC_DOM_temp_3)
             if DOMINANT_model_4 is not None:
-                print('DOMINANT w/ Jaccard and SM: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_4, 
+                print('DOMINANT w/ Jaccard: Anomaly score:', true_AScore, '--- DOM anomaly score:', AS_DOM_temp_4, 
                                     '--- DOM AUC:', AUC_DOM_temp_4, '--- TARGET DOM ACC:', ACC_DOM_temp_4)
     AS = np.array(AS)    
 
