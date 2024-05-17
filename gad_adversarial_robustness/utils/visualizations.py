@@ -78,6 +78,29 @@ def get_rest_of_node_idxs(subset_idxs, num_nodes):
     
     return rest_of_node_idxs
 
+
+def plot_AS_scores_over_budgets(AS_scores, targets):
+    
+    def get_ranges(AS, targets):
+        AS = np.array(AS)
+        argsort = np.argsort(AS)
+
+        returnList = []
+        for target in targets:
+            returnList.append(np.where(argsort == target)[0][0])
+        return returnList
+
+    AS_placings = []
+    for AS in AS_scores:
+        AS_placings.append(get_ranges(AS, targets))
+    
+    rangeList = list(range(0, len(AS_placings)))
+
+    plt.plot(rangeList, AS_placings)
+    plt.legend()
+    plt.show()
+
+
 def visualize_node_degree(edge_index_list, graph_names = None, cut_off = None):
     """
         Visualizes the cumulative distribution of node degrees for a subset for a list of edge_indexes
