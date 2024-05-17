@@ -28,19 +28,22 @@ from torch_geometric.data import Data
 from gad_adversarial_robustness.poison.greedy import multiple_AS
 from gad_adversarial_robustness.utils.graph_utils import get_n_anomaly_indexes
 
+
 from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS
 from pygod.detector import DOMINANT
 
+torch.manual_seed(123)
 
 USE_DOMINANT_AS_TO_SELECT_TOP_K_TARGET = False
 USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET = True
 USE_FIRST_K_TO_SELECT_TOP_K_TARGET = False
 
-TOP_K = 10
+TOP_K = 15
+SAMPLE_RANDOM_TOP = True
 
 SAMPLE_MODE = 'top' # 'top', 'lowest', 'normal'
-
 DATASET_NAME = 'inj_cora'
+
 print(DATASET_NAME)
 GRAPH_PARTITION_SIZE = None
 
@@ -64,8 +67,7 @@ if DATASET_NAME == 'inj_cora' or DATASET_NAME == 'inj_amazon':
     prior_labels = dataset_planetoid[0].y
 
 elif DATASET_NAME == 'Wiki' or DATASET_NAME == 'Cora' or DATASET_NAME == 'Facebook':
-    dataset: Data = load_injected_dataset(DATASET_NAME)
-    prior_labels = dataset.y
+    dataset, prior_labels = load_injected_dataset(DATASET_NAME)
 
 if GRAPH_PARTITION_SIZE is not None:
     subset = torch.randperm(dataset.num_nodes)[:GRAPH_PARTITION_SIZE]
@@ -125,7 +127,10 @@ elif USE_ODDBALL_AS_TO_SELECT_TOP_K_TARGET:
     print("ALL:")
     get_anomalies_with_label_1(target_list_as, labels_np)
     print("NOT ALL:")
-    target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True)
+    if SAMPLE_RANDOM_TOP:
+        target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True, random_top=True)
+    else: 
+        target_list = get_anomaly_indexes(target_list_as, labels_np, TOP_K, method=SAMPLE_MODE, print_scores=True, random_top=False)
     print(f'Target list: {target_list}')
 elif USE_FIRST_K_TO_SELECT_TOP_K_TARGET:
     anomaly_list = get_n_anomaly_indexes(y_binary, TOP_K)
@@ -139,7 +144,7 @@ for target in target_list:
 
 #budget = target_list.shape[0] * 2  # The amount of edges to change
 
-budget = TOP_K * 4
+budget = TOP_K * 6
 
 print("Starting attack...")
 """
@@ -177,7 +182,7 @@ dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden
 
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
-    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=DominantNew2)
+    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew2)
 #_, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
 #    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=DominantAgg, DOMINANT_model_4=DominantPP)
 
@@ -340,11 +345,11 @@ def plot_anomaly_scores(anomaly_scores, model_name):
 
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[0], "Unmodified DOMINANT")
 plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[1], "Our proposal")
-plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
+#plot_anomaly_scores(CHANGE_IN_TARGET_NODE_AS_1[2], "DOMINANT Jaccard")
 
 # %%
-plot_scores(AS_DOM_1[0][:35], AS_DOM_1[1][:35], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score", AS_DOM_1[2][:35])
-plot_scores(AUC_DOM_1[0][:35], AUC_DOM_1[1][:35], "AUC by Budget", "Budget", "Anomaly Score", AUC_DOM_1[2][:35])
+plot_scores(AS_DOM_1[0], AS_DOM_1[1], "Sum of Target Nodes Anomaly Scores by Budget", "Budget", "Anomaly Score")
+plot_scores(AUC_DOM_1[0], AUC_DOM_1[1], "AUC by Budget", "Budget", "Anomaly Score")
 
 #print(AS_DOM2)
 

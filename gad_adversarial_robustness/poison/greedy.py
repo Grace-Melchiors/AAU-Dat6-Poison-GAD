@@ -166,12 +166,13 @@ def update_edge_index(edge_index, changes, device):
     for change in changes:
         source, target, weight = change
         
-        if weight == 0:  # Add edge
-            new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device=device)
-            updated_edge_index = torch.cat([updated_edge_index, new_edge], dim=1)
-        elif weight == 1.0:  # Remove edge
+        if weight == 1.0:  # Remove edge
             mask = ~(((updated_edge_index[0] == source) & (updated_edge_index[1] == target)) | ((updated_edge_index[0] == target) & (updated_edge_index[1] == source)))
             updated_edge_index = updated_edge_index[:, mask]
+        else:  # Add edge
+            new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device=device)
+            updated_edge_index = torch.cat([updated_edge_index, new_edge], dim=1)
+
 
     return updated_edge_index
 

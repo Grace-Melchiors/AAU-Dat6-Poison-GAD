@@ -35,6 +35,9 @@ from pygod.generator import gen_contextual_outlier, gen_structural_outlier
 from torch_geometric.transforms import normalize_features
 from gad_adversarial_robustness.gad.OddBall_vs_DOMININANT import get_OddBall_AS, get_OddBall_AS_simple
 
+torch.manual_seed(123)
+np.random.seed(123)
+
 def modified_drop_dissimilar_edges(features, edge_index, threshold: float = 0.01):
     modified_edge_index = edge_index.clone()
     row, col = modified_edge_index
@@ -297,6 +300,7 @@ class Dominant(nn.Module):
         prior_shape = edge_index.shape
         config_device = 'cuda'
         VERBOSE = False
+        np.random.seed(123)
 
         if self._adj_preped is not None:
             return self._adj_preped
@@ -307,7 +311,7 @@ class Dominant(nn.Module):
         GAMMA = 0.35
         JACCARD_THRESHOLD = 0.01
         THRESHOLD = 0.76
-        NUM_EDGES_TO_ADD_TO_ANOMALOUS = 4
+        NUM_EDGES_TO_ADD_TO_ANOMALOUS = 2
 
         pruned_edge_index = modified_drop_dissimilar_edges(x, edge_index, threshold=JACCARD_THRESHOLD)
 
@@ -362,6 +366,9 @@ class Dominant(nn.Module):
         count3 = 0
         added_edges = []
         ###
+
+        count_added = 0
+        count_deleted = 0
 
         NUM_HOPS = 1
         for index in true_indices.cpu().numpy():
@@ -437,9 +444,10 @@ class Dominant(nn.Module):
 
     
                 if anomaly_scores[node2] < avg_anomaly_score - 0.6:
-                    print("REMOVING")
+                    #print("REMOVING")
                     edges_to_remove = ((edge_index[0] == node1) & (edge_index[1] == node2)) | ((edge_index[0] == node2) & (edge_index[1] == node1))
                     edge_index = edge_index[:, ~edges_to_remove]
+                    count_deleted += 1
 
 
 
@@ -450,6 +458,7 @@ class Dominant(nn.Module):
                         print("Adding edge to node with AS: ", anomaly_scores[target])
                     new_edge = torch.tensor([[source, target], [target, source]], dtype=torch.long, device='cuda')
                     edge_index = torch.cat([edge_index, new_edge], dim=1)
+                    count_added += 1
 
                 # Add new edge from node2 to a node with an above average 
 
@@ -465,9 +474,6 @@ class Dominant(nn.Module):
             self._adj_preped = (edge_index, edge_weight)
         
 
-        print("Total removed to anomalous: ", count1)
-        print("Total removed from anomalous: ", count2)
-        print("Total other removed: ", count3)
 
         if VERBOSE:
             print("The kth threshold was: ", kth_threshold_score)
@@ -481,6 +487,32 @@ class Dominant(nn.Module):
         if VERBOSE: 
             for index, count in index_counts.items():
                 print(f"Removed {count} edges from node with index {index}")
+
+        print("Total removed to anomalous: ", count1)
+        print("Total removed from anomalous: ", count2)
+        print("Total other removed: ", count3)
+        print("TOTAL ADDED EDGES: ", count_added)
+        print("TOTAL DELETED EDGES: ", count_deleted)
+
+        # Define column names
+        columns = ["total_to_anom", "total_from_anom", "total_other", "total_added", "total_deleted"]
+
+        # Write header only if file doesn't exist
+        with open('output.csv', mode='a', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=columns)
+            if file.tell() == 0:  # Check if file is empty
+                writer.writeheader()
+
+        with open('output.csv', mode='a', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=columns)
+            writer.writerow({
+                "total_to_anom": count1,
+                "total_from_anom": count2,
+                "total_other": count3,
+                "total_added": count_added,
+                "total_deleted": count_deleted
+            })
+
 
         return edge_index, edge_weight
 
