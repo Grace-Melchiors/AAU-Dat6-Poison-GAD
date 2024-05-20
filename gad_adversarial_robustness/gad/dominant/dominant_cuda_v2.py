@@ -89,11 +89,14 @@ class Dominant(nn.Module):
         self.last_struct_loss = None
         self.last_feat_loss = None
 
+        self.latent_value = None
+
 
 
     
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.shared_encoder(x, edge_index)
+        self.latent_value = x.detach().cpu().numpy()
         x_hat = self.attr_decoder(x, edge_index)
         struct_reconstructed = self.struct_decoder(x, edge_index)
         return struct_reconstructed, x_hat
