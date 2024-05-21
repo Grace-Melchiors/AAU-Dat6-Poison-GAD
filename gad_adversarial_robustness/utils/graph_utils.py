@@ -1,5 +1,8 @@
 from torch_sparse import SparseTensor 
+import torch_geometric.transforms as T
+
 from torch_geometric.datasets import Planetoid
+from torch_geometric.data import Data
 
 import math
 import torch
@@ -187,17 +190,26 @@ def top_anomalous_nodes(anomaly_scores, labels, K, print_scores = False):
 
 
 
-def get_anomaly_indexes(scores, labels, k, method='top', print_scores=False):
+def get_anomaly_indexes(scores, labels, k, method='top', print_scores=False, random_top = False):
     # Convert lists to numpy arrays
     scores = np.array(scores)
     labels = np.array(labels)
+    np.random.seed(123)
     
     # Find indices of nodes with label = 1 and non-nan scores
     valid_indices = np.where((labels == 1) & (~np.isnan(scores)))[0]
+    threshold = np.percentile(scores[valid_indices], 75)
 
     if method == 'top':
-        # Sort the valid indices based on scores in descending order, ignoring NaN values
-        sorted_indices = sorted(valid_indices, key=lambda i: scores[i] if not np.isnan(scores[i]) else -np.inf, reverse=True)
+        if random_top:
+            # Randomly sample k anomalies from the top 75% of scores where label == 1
+            top_indices = valid_indices[scores[valid_indices] >= threshold]
+            selected_indices = np.random.choice(top_indices, k, replace=False)
+        else:
+            # Sort the valid indices based on scores in descending order, ignoring NaN values
+            sorted_indices = sorted(valid_indices, key=lambda i: scores[i] if not np.isnan(scores[i]) else -np.inf, reverse=True)
+            # Extract K indices
+            selected_indices = sorted_indices[:k]
 
     elif method == 'lowest':
         # Sort the valid indices based on scores in ascending order, ignoring NaN values
@@ -212,8 +224,8 @@ def get_anomaly_indexes(scores, labels, k, method='top', print_scores=False):
         # Round and convert to integers
         sorted_indices = np.argsort(np.abs(clipped_indices - mean_score))[:k]
     
-    # Extract K indices
-    selected_indices = sorted_indices[:k]
+        # Extract K indices
+        selected_indices = sorted_indices[:k]
 
     if print_scores:
         # Print anomaly scores for the top K indices
@@ -240,25 +252,33 @@ def get_anomalies_with_label_1(scores, labels):
         print("Node index: {}, Score: {}".format(node[0], node[2]))
 
 
-def load_injected_dataset(dataset_name, seed = 123):
+def load_injected_dataset(dataset_name, seed = 1234):
 
-    #dataset = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
-    dataset = Planetoid(root='data/', name=dataset_name)
-
-    data = dataset[0]
+    if dataset_name == 'Wiki':
+        data = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
+    if dataset_name == 'Cora':
+        data = Planetoid(root='data/', name=dataset_name)
+        data = Planetoid('data/', 'cora', transform=T.NormalizeFeatures())[0]
 
     num_nodes_to_inject = math.ceil((data.num_nodes / 100) * 5)
-    num_nodes_per_clique = 15
+    num_nodes_per_clique = 10
     num_cliques = (num_nodes_to_inject // 2) // num_nodes_per_clique
     num_contextual_outliers = num_nodes_to_inject - num_cliques * num_nodes_per_clique
 
-    print("--- Inserting outliers ---")
-    data, ya = gen_contextual_outlier(data, n = num_contextual_outliers, k = 50, seed = seed) 
+    prior_labels = data.y
+
+    data, ya = gen_contextual_outlier(data, n=num_contextual_outliers, k=10)
     #n (int) – Number of nodes converting to outliers.
     #k (int) – Number of candidate nodes for each outlier node.
 
-    data, ys = gen_structural_outlier(data, m = num_nodes_per_clique, n = num_cliques, seed = seed, p=0.2)
+    data, ys = gen_structural_outlier(data, m=num_nodes_per_clique, n=num_cliques, p=0.2)
     #m (int) - Number nodes in the outlier cliques.
     #n (int) - Number of outlier clique
-    data.y = torch.logical_or(ys, ya).long()
-    return data
+
+    y = torch.zeros(data.x.shape[0], dtype=torch.long)
+    y[ya.bool()] += 1
+    y[ys.bool()] += 2
+
+    data.y = y
+    
+    return data, prior_labels
