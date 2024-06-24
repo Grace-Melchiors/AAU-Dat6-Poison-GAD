@@ -22,7 +22,7 @@ from gad_adversarial_robustness.gad.dominant.dominant_cuda_medoid import Dominan
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess import Dominant as DominantPP
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_and_medoid import Dominant as DominantAggPP
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob import Dominant as DominantNew
-from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob_v2 import Dominant as DominantNew2
+from gad_adversarial_robustness.gad.dominant.dominant_cuda_camoblock import Dominant as DominantCamoBlock
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.data import Data
 from gad_adversarial_robustness.poison.greedy import multiple_AS
@@ -182,7 +182,7 @@ dom_params = {'feat_size': attrs.size(1), 'hidden_size': config['model']['hidden
 
 
 _, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
-    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew2)
+    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNewCamoBlock)
 #_, AS_1, AS_DOM_1, AUC_DOM_1, ACC_DOM_1, perturb_1, edge_index_1, CHANGE_IN_TARGET_NODE_AS_1, LAST_FEAT_LOSS, LAST_STRUCT_LOSS = greedy_attack_with_statistics_multi(
 #    model, triple, Dominant, dom_params, config, target_list, budget, print_stats = True, DOMINANT_model_2=DominantNew, DOMINANT_model_3=DominantAgg, DOMINANT_model_4=DominantPP)
 
