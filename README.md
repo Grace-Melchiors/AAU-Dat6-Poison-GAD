@@ -15,7 +15,7 @@ The files central to the project include:
 - [Base Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_v2.py)
 - [Jaccard Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_Jaccard_similarity.py)
 - [Soft Medoid Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_medoid.py)
-- [CamoBlock Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_preprocess_ob_v2.py)
+- [CamoBlock Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_camoblock.py)
 
 ## Contributing
 This project is developed by
