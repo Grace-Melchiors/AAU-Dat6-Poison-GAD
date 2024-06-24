@@ -5,16 +5,17 @@ It takes a dataset and injects it with anomalies, it then detects the performanc
 It provides tools to visualize this performance, and can be adjusted as needed.
 
 ## Table of Contents
-- [Installation](#installation)
-- [Usage](#usage)
+- [Important Files](#important-files)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Installation
-In this project we utilize the following packages:
-
-## Usage
-To utilize the project refer to [Insert Later]
+## Important Files
+The files central to the project include:
+- [GMS Poison](gad_adversarial_robustness/poison/greedy.py)
+- [Base Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_v2.py)
+- [Jaccard Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_Jaccard_similarity.py)
+- [Soft Medoid Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_medoid.py)
+- [CamoBlock Dominant](gad_adversarial_robustness/gad/dominant/dominant_cuda_preprocess_ob_v2.py)
 
 ## Contributing
 This project is developed by
