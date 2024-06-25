@@ -574,7 +574,9 @@ if __name__ == '__main__':
     with open(yaml_path) as file:
         config = yaml.safe_load(file)
 
-    dataset: Data = load_data("inj_cora")
+    #dataset: Data = load_data("inj_cora")
+    from gad_adversarial_robustness.utils.graph_utils import top_anomalous_nodes, load_injected_dataset, get_anomaly_indexes, get_anomalies_with_label_1
+    dataset, prior_labels = load_injected_dataset('Cora')
     adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
     #edge_index = torch.LongTensor(np.array(sp.coo_matrix(adj).nonzero()))
     adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])
@@ -593,7 +595,7 @@ if __name__ == '__main__':
     print("SHAPE")
     print(dataset_planetoid[0])
     print(dataset_planetoid.edge_index.shape)
-    prior_labels = dataset_planetoid[0].y
+    #prior_labels = dataset_planetoid[0].y
 
 
 

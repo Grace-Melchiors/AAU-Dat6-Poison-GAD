@@ -255,30 +255,52 @@ def get_anomalies_with_label_1(scores, labels):
 def load_injected_dataset(dataset_name, seed = 1234):
 
     if dataset_name == 'Wiki':
-        data = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
+        #data = AttributedGraphDataset(root = "data/"+dataset_name, name = dataset_name)
+        data = AttributedGraphDataset('data/', 'Wiki', transform=T.NormalizeFeatures())[0]
     if dataset_name == 'Cora':
-        data = Planetoid(root='data/', name=dataset_name)
+        #data = Planetoid(root='data/', name=dataset_name)
         data = Planetoid('data/', 'cora', transform=T.NormalizeFeatures())[0]
+    if dataset_name == 'Facebook':
+        data = Planetoid('data/', 'CiteSeer', transform=T.NormalizeFeatures())[0]
+        print("NUM NODES CITE SEER: ", data.num_nodes)
+    if dataset_name == 'Amazon':
+        from torch_geometric.datasets import Amazon
+        from torch_geometric.utils import subgraph
+        dataset = Amazon(root='data/Amazon', name='Computers')
+        data = dataset[0]
+        num_nodes_to_sample = 2000
+        torch.manual_seed(123)
+        node_indices = torch.randperm(data.num_nodes)[:num_nodes_to_sample]
+        data.edge_index = subgraph(node_indices, data.edge_index)[0]
+
+
+
+
 
     num_nodes_to_inject = math.ceil((data.num_nodes / 100) * 5)
     num_nodes_per_clique = 10
     num_cliques = (num_nodes_to_inject // 2) // num_nodes_per_clique
+    # Temp
+    num_cliques = 7
     num_contextual_outliers = num_nodes_to_inject - num_cliques * num_nodes_per_clique
+    print("num contextual outliers: ", num_contextual_outliers)
+    print("num structural outliers: ", num_cliques*num_nodes_per_clique)
 
     prior_labels = data.y
 
-    data, ya = gen_contextual_outlier(data, n=num_contextual_outliers, k=10)
+    data, ya = gen_contextual_outlier(data, n=num_contextual_outliers, k=10, seed=12345)
     #n (int) – Number of nodes converting to outliers.
     #k (int) – Number of candidate nodes for each outlier node.
 
-    data, ys = gen_structural_outlier(data, m=num_nodes_per_clique, n=num_cliques, p=0.2)
+    data, ys = gen_structural_outlier(data, m=num_nodes_per_clique, n=num_cliques, p=0.2, seed=1234)
     #m (int) - Number nodes in the outlier cliques.
     #n (int) - Number of outlier clique
 
-    y = torch.zeros(data.x.shape[0], dtype=torch.long)
-    y[ya.bool()] += 1
-    y[ys.bool()] += 2
+    data.y = torch.logical_or(ys, ya).long()
+    # Count occurrences of value 1
+    data.y = data.y.bool()
+    count_ones = (data.y == 1).sum().item()
 
-    data.y = y
-    
+    print("Occurrences of value 1 hi:", count_ones)
+        
     return data, prior_labels

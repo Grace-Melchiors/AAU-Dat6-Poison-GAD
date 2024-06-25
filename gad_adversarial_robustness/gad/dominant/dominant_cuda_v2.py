@@ -19,6 +19,7 @@ from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
 
 torch.manual_seed(123)
+np.random.seed(123)
 
 def eval_precision_at_k(label, score, k=None):
     if k is None:
@@ -199,7 +200,23 @@ if __name__ == '__main__':
     with open(yaml_path) as file:
         config = yaml.safe_load(file)
 
-    dataset: Data = load_data("inj_cora")
+    from torch_geometric.datasets import Planetoid
+    import torch_geometric.transforms as T
+    from pygod.generator import gen_contextual_outlier, gen_structural_outlier
+    #dataset: Data = load_data("inj_cora")
+    dataset = Planetoid('.', 'cora', transform=T.NormalizeFeatures())[0]
+    dataset, ya = gen_contextual_outlier(dataset, n=70, k=10)
+    dataset, ys = gen_structural_outlier(dataset, m=10, n=7, p=0.2)
+    y = torch.zeros(dataset.x.shape[0], dtype=torch.long)
+    y[ya.bool()] += 1
+    y[ys.bool()] += 2
+    dataset.y = y
+
+
+
+
+
+
     adj, _, _, adj_label = load_anomaly_detection_dataset(dataset, config['model']['device'])
     #edge_index = torch.LongTensor(np.array(sp.coo_matrix(adj).nonzero()))
     adj_label = torch.FloatTensor(adj_label).to(config['model']['device'])

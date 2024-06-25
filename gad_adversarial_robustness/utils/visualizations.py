@@ -9,6 +9,28 @@ from typing import List
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 import torch_geometric
 
+
+def plot_AS_scores_over_budgets(AS_scores, targets):
+
+    def get_ranges(AS, targets):
+        AS = np.array(AS)
+        argsort = np.argsort(AS)
+
+        returnList = []
+        for target in targets:
+            returnList.append(np.where(argsort == target)[0])
+        return returnList
+
+    AS_placings = []
+    for AS in AS_scores:
+        AS_placings.append(get_ranges(AS, targets))
+
+    rangeList = list(range(0, len(AS_placings)))
+
+    plt.plot(rangeList, AS_placings)
+    plt.legend()
+    plt.show()
+
 def plot_graph(edge_index):
     """
     parameters:

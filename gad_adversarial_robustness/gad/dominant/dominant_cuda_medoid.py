@@ -21,6 +21,8 @@ from torch.nn import init
 from gad_adversarial_robustness.gad.dominant.means import dense_cpu_soft_weighted_medoid_k_neighborhood, dense_device_soft_weighted_medoid_k_neighborhood
 from typing import Dict, Any
 
+torch.manual_seed(123)
+np.random.seed(123)
 
 class CustomGCNConv(GCNConv):
     def __init__(self, in_channels, out_channels, mean_kwargs: Dict[str, Any] = dict(k=64, temperature=0.25, with_weight_correction=True),  *args, **kwargs):
