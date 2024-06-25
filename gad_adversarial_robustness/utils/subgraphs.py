@@ -106,14 +106,3 @@ def generate_RWR_subgraph(starting_node, edge_index, amount_of_nodes):
     connectivity.append(starting_node)  # add starting node
 
     return connectivity
-
-
-
-#Example code:
-edge_index = torch.tensor([[0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
-                           [1, 0, 2, 1, 3, 2, 4, 3, 5, 4, 6, 5]])
-edge_attr = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
-subset = torch.tensor([3,4])
-
-
-print(generate_RWR_subgraph(4, edge_index, 2))

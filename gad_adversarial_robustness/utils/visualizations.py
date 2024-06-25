@@ -8,6 +8,7 @@ from gad_adversarial_robustness.utils.subgraphs import get_subset_neighbors
 from typing import List
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 import torch_geometric
+from sklearn.manifold import TSNE
 
 
 def plot_AS_scores_over_budgets(AS_scores, targets):
@@ -44,6 +45,28 @@ def plot_graph(edge_index):
 
     nx.draw(g)
 
+
+
+def visualize_latent_space(model, anomaly_list):
+    """
+    parameters:
+        model: trained model with .latent_value and .score
+        anomaly_list: list of anomaly nodes
+    """
+    latent_values = model.latent_value
+    score = model.score
+
+    tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
+    tsne_results = tsne.fit_transform(latent_values)
+
+    for i in range(len(tsne_results)):
+        if i not in anomaly_list:
+            plt.scatter(tsne_results[i,0], tsne_results[i,1], alpha=0.2, s=100 * score[i]**2, color='b')
+
+    for anom in anomaly_list:
+        plt.scatter(tsne_results[anom,0], tsne_results[anom,1], alpha=0.7, s=100 * score[anom]**2, color='r')
+
+    plt.plot()
 
 def plot_node_subgraph(edge_index, node_indexs, anomaly_list = [], with_labels = False):
     """
@@ -99,6 +122,29 @@ def get_rest_of_node_idxs(subset_idxs, num_nodes):
         rest_of_node_idxs = torch.cat([rest_of_node_idxs[0:i], rest_of_node_idxs[i+1:]])
     
     return rest_of_node_idxs
+
+
+def plot_AS_scores_over_budgets(AS_scores, targets):
+    
+    def get_ranges(AS, targets):
+        AS = np.array(AS)
+        argsort = np.argsort(AS)
+
+        returnList = []
+        for target in targets:
+            returnList.append(np.where(argsort == target)[0][0])
+        return returnList
+
+    AS_placings = []
+    for AS in AS_scores:
+        AS_placings.append(get_ranges(AS, targets))
+    
+    rangeList = list(range(0, len(AS_placings)))
+
+    plt.plot(rangeList, AS_placings)
+    plt.legend()
+    plt.show()
+
 
 def visualize_node_degree(edge_index_list, graph_names = None, cut_off = None):
     """

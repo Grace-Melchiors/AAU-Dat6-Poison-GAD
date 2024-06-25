@@ -110,49 +110,6 @@ def label_similarity(label_a, label_b):
     """
     return int(label_a == label_b)
 
-def _feature_similarity(a, b):
-    # Check if a and b are the same, return 1 if they are
-    if a == b:
-        return 1
-    if np.array_equal(a, b):
-        return 1
-    
-    return 0
-    feature_simi = np.exp(-1 * np.square(np.linalg.norm(a - b)))
-    return feature_simi
-
-
-def get_jaccard(adjacency_matrix: torch.Tensor, features: torch.Tensor, threshold: int = 0.02):
-    """Jaccard similarity edge filtering as proposed in Huijun Wu, Chen Wang, Yuriy Tyshetskiy, Andrew Docherty, Kai Lu,
-    and Liming Zhu.  Adversarial examples for graph data: Deep insights into attack and defense.
-
-    Parameters
-    ----------
-    adjacency_matrix : torch.Tensor
-        Sparse [n,n] adjacency matrix.
-    features : torch.Tensor
-        Dense [n,d] feature matrix.
-    threshold : int, optional
-        Similarity threshold for filtering, by default 0.
-
-    Returns
-    -------
-    torch.Tensor
-        Preprocessed adjacency matrix.
-    """
-    row, col = adjacency_matrix._indices().cpu()
-    values = adjacency_matrix._values().cpu()
-    N = adjacency_matrix.shape[0]
-
-    if features.is_sparse:
-        features = features.to_dense()
-
-    modified_adj = sp.coo_matrix((values.numpy(), (row.numpy(), col.numpy())), (N, N))
-    modified_adj = modified_drop_dissimilar_edges(features.cpu().numpy(), modified_adj, threshold=threshold)
-    modified_adj = torch.sparse.FloatTensor(*from_scipy_sparse_matrix(modified_adj)).to(adjacency_matrix.device)
-    print("MODIFIED ADJ SHAPE: ", modified_adj.shape)
-    return modified_adj
-
 
 class Encoder(nn.Module):
     def __init__(self, nfeat: int, nhid: int, dropout: float):
@@ -204,9 +161,6 @@ class Dominant(nn.Module):
         self.attr_decoder = AttributeDecoder(feat_size, hidden_size, dropout)
         self.struct_decoder = StructureDecoder(hidden_size, dropout)
 
-        #self.edge_index = edge_index.to(self.device)
-        #self.adj_label = adj_label.to(self.device).requires_grad_(True)
-        #self.attrs = attrs.to(self.device).requires_grad_(True)
         
         self.label = label
         self.top_k_AS = None
@@ -223,7 +177,6 @@ class Dominant(nn.Module):
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, label, prior_labels):
         edge_index, edge_weight = self._preprocess_adjacency_matrix(edge_index, x, label, prior_labels)
-        #x, edge_index, edge_weight = self._ensure_contiguousness(x, edge_index, edge_weight)
 
         x = self.shared_encoder(x, edge_index, edge_weight)
         x_hat = self.attr_decoder(x, edge_index, edge_weight)
@@ -234,17 +187,8 @@ class Dominant(nn.Module):
         optimizer = torch.optim.Adam(self.parameters(), lr=config['model']['lr'])
         edge_index = new_edge_index
         edge_index = add_self_loops(edge_index)[0].to(self.device)
-        #print("Fitting on edge index of shape: ", edge_index.shape)
-
-
-        
+       
         for epoch in range(config['model']['epochs']):
-            #adj, adj_label = prepare_adj_and_adj_label(edge_index=self.edge_index)
-            #edge_index = to_edge_index(torch.sparse_coo_tensor(adj.nonzero(), adj.data, adj.shape))[0].to(self.device)
-            #adj_label = torch.tensor(adj_label).to(self.device)
-            #print(edge_index[0].shape)
-            #adj_label = torch.tensor(adj_label).to(self.device)
-
             self.train()
             optimizer.zero_grad()
             # TODO: Normalize for every forward step
@@ -275,23 +219,7 @@ class Dominant(nn.Module):
                 if epoch == config['model']['epochs'] - 1:
                     self.last_struct_loss = struct_loss.detach().cpu().numpy()
                     self.last_feat_loss = feat_loss.detach().cpu().numpy()
-
-
-
-
-    def _ensure_contiguousness(self,
-                               x: torch.Tensor,
-                               edge_idx: torch.Tensor,
-                               edge_weight: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-        if not x.is_sparse:
-            x = x.contiguous()
-        edge_idx = edge_idx.contiguous()
-        if edge_weight is not None:
-            edge_weight = edge_weight.contiguous()
-        return x, edge_idx, edge_weight
     
-    
-
     def _preprocess_adjacency_matrix(self,
                                      edge_idx: torch.Tensor,
                                      x: torch.Tensor, label, prior_labels) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -315,24 +243,17 @@ class Dominant(nn.Module):
 
         pruned_edge_index = modified_drop_dissimilar_edges(x, edge_index, threshold=JACCARD_THRESHOLD)
 
-        #if self.training and self._adj_preped is not None:
         if SAVED == False:
             anomaly_scores = get_OddBall_AS_simple(edge_index, num_nodes, device=config_device)
             anomaly_scores = torch.Tensor(anomaly_scores).to(config_device)
             torch.save(anomaly_scores, 'anomaly_scores.pt')
         elif SAVED == True:
             anomaly_scores = torch.load('anomaly_scores.pt')
-
-   
-
-        # Select nodes with above avg. anomaly scores. Needed for later when we add edges
-
         
         avg_anomaly_score = torch.mean(anomaly_scores)
-        #above_avg_nodes_indices = torch.nonzero(anomaly_scores > avg_anomaly_score).squeeze().cpu().numpy()
        
         AVG_AS = False
-        KTH_AS = 50 # 75 is good
+        KTH_AS = 50 
 
         percentile_threshold = KTH_AS
         k = int(percentile_threshold * num_nodes / 100)
@@ -341,13 +262,9 @@ class Dominant(nn.Module):
 
         deg = degree(pruned_edge_index[0], num_nodes=num_nodes)
         non_zero_tensor = deg[deg != 0]
-        # Get mean of sum of nonzero
         average_degree = non_zero_tensor.mean().item()
         average_degree = 0.9
         print("AVG DEG ", average_degree)
-        #average_degree = 1
-        #average_anomaly_score = sum(anomaly_scores) / len(anomaly_scores)
-        # Currently with K = 30, we get 100 indexes.
 
         if VERBOSE: 
             print(f'Mean degree: {average_degree}')
@@ -355,8 +272,6 @@ class Dominant(nn.Module):
         print("SHAPE OF KTHTHRESHOLD AND DEG ", anomaly_scores.shape, deg.shape)
         selected_nodes = (anomaly_scores < kth_threshold_score) & (deg >= 1)
 
-        #print(f'Selected nodes: {selected_nodes}')
-        #print(f'Shape of selected nodes: {selected_nodes.shape}')
         true_indices = selected_nodes.nonzero(as_tuple=False).squeeze()
         
 
@@ -374,20 +289,16 @@ class Dominant(nn.Module):
         for index in true_indices.cpu().numpy():
             subset, _, _, edge_mask = k_hop_subgraph(int(index), NUM_HOPS, pruned_edge_index)
 
-            feature_similarities = []
+            label_similarities = []
             for neighbor_idx in subset:
-                feature_similarity = label_similarity(prior_labels[index], prior_labels[neighbor_idx])
-                feature_similarities.append(feature_similarity)
-
-                #feature_similarity = _feature_similarity(x[index].cpu().numpy(), x[neighbor_idx].cpu().numpy())
-                #feature_similarities.append(feature_similarity)
-                #print(f'FEATURE SIM: {feature_similarity}')
+                label_similarity = label_similarity(prior_labels[index], prior_labels[neighbor_idx])
+                label_similarities.append(label_similarity)
 
             # Convert to tensor
-            feature_similarities= torch.tensor(feature_similarities).to(config_device)
+            label_similarities= torch.tensor(label_similarities).to(config_device)
 
             # Combine anomaly scores and Jaccard similarities
-            combined_scores = anomaly_scores[subset] + (GAMMA * (feature_similarities))
+            combined_scores = anomaly_scores[subset] + (GAMMA * (label_similarities))
 
             if VERBOSE: 
                 print("COMBINED SCORES")
@@ -425,7 +336,7 @@ class Dominant(nn.Module):
                 if label[node2] == 1:
                     count1+=1
                     if VERBOSE:
-                        print(f"REMOVED EDGE TO ANOMALOUS NODE . From {node1} to {node2}")
+                        print(f"REMOVED EDGE TO ANOMALOUS NODE. From {node1} to {node2}")
                     # Added edges is just for logging
                     added_edges.append(node2)
 
@@ -440,17 +351,7 @@ class Dominant(nn.Module):
                     count3 +=1
 
                 top_indices = torch.argsort(anomaly_scores, descending=True)[:int(0.2 * len(anomaly_scores))]
-                #print("AVG AS: ", avg_anomaly_score)
-
-    
-                if anomaly_scores[node2] < avg_anomaly_score - 0.6:
-                    #print("REMOVING")
-                    edges_to_remove = ((edge_index[0] == node1) & (edge_index[1] == node2)) | ((edge_index[0] == node2) & (edge_index[1] == node1))
-                    edge_index = edge_index[:, ~edges_to_remove]
-                    count_deleted += 1
-
-
-
+                
                 for i in range(NUM_EDGES_TO_ADD_TO_ANOMALOUS):
                     source = node2
                     target = np.random.choice(top_indices.cpu().numpy())
@@ -460,7 +361,6 @@ class Dominant(nn.Module):
                     edge_index = torch.cat([edge_index, new_edge], dim=1)
                     count_added += 1
 
-                # Add new edge from node2 to a node with an above average 
 
 
 
