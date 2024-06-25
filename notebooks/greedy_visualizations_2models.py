@@ -6,7 +6,6 @@ from gad_adversarial_robustness.poison.greedy import greedy_attack_with_statisti
 import os
 import torch
 import numpy as np
-from torch.optim.optimizer import required
 import torch
 import numpy as np
 import scipy.sparse as sp
@@ -20,7 +19,7 @@ import os
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_v2 import Dominant 
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_medoid import Dominant as DominantMedoid
 from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess import Dominant as DominantJaccard
-from gad_adversarial_robustness.gad.dominant.dominant_cuda_preprocess_ob_v2 import Dominant as DominantCamoBlock
+from gad_adversarial_robustness.gad.dominant.dominant_cuda_camoblock import Dominant as DominantCamoBlock
 from gad_adversarial_robustness.utils.graph_utils import load_anomaly_detection_dataset
 from torch_geometric.data import Data
 from gad_adversarial_robustness.poison.greedy import multiple_AS
